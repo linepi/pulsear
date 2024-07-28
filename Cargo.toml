@@ -1,0 +1,8 @@
+[workspace]
+members = [
+  "pulsear",
+  "pulsear-ui",
+  "pulsear-cli",
+]
+resolver = "2"
+

@@ -1,0 +1,17 @@
+[package]
+name = "pulsear"
+version = "0.1.0"
+edition = "2021"
+authors = ["Lemonorn <mmagicode@gmail.com>"]
+description = """
+A rust server of a NAS system
+"""
+license = "MIT"
+readme = "../README.md"
+repository = "https://github.com/linepi/pulsear"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+rand = "0.8.5"
+actix-web = "4"
+tauri = { version = "1.7.0", features = [] }
