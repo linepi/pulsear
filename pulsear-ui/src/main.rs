@@ -3,7 +3,7 @@
 
 fn main() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![pulsear::command::greet])
+    .invoke_handler(tauri::generate_handler![pulsear_ui::command::greet])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

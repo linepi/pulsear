@@ -54,11 +54,13 @@
     },
     "windows": [
       {
+        "title": "Pulsear",
         "fullscreen": false,
-        "height": 960,
+        "center": true,
         "resizable": true,
-        "title": "pulsear",
-        "width": 1080
+        "height": 960,
+        "width": 1080,
+        "minWidth": 360
       }
     ]
   }
