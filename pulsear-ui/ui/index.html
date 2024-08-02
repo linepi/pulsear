@@ -582,11 +582,7 @@
 	function loadLocalConfig() {
 		if (localStorage.getItem('pulsearLocalConfig') != null) {
 			data.localConfig = JSON.parse(localStorage.getItem('pulsearLocalConfig'));
-			if (data.localConfig.userToken && data.localConfig.username) {
-				data.userCtx.login = true
-				data.userCtx.username = data.localConfig.username;
-				data.userCtx.token = data.localConfig.userToken;
-			}
+			console.log("localConfig init: ", data.localConfig);
 		}
 	}
 
@@ -619,6 +615,15 @@
 				data.userCtx.userMenu = false;
 			}
 		});
+		loadLocalConfig();
+		if (data.localConfig.userToken && data.localConfig.username) {
+			data.userCtx.login = true
+			data.userCtx.username = data.localConfig.username;
+			data.userCtx.token = data.localConfig.userToken;
+			data.theme = data.localConfig.theme;
+		}
+		refreshDom();
+		registerListeners();
 	}
 
 	function onResponseCode(code) {
@@ -693,8 +698,5 @@
 		},
 	}
 	init();
-	loadLocalConfig();
-	refreshDom();
-	registerListeners();
 </script>
 </html>
