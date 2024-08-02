@@ -314,8 +314,8 @@
 			<div class="logo" v-text="data.pageTitle"></div>
 			 <div class="nav-left">
 				<div class="theme-toggle" @click="toggleTheme">
-					<div v-if="data.theme === 'dark'" class="moon-icon"></div>
-					<div v-else-if="data.theme === 'light'" class="sun-icon"></div>
+					<div v-if="data.localConfig.theme === 'dark'" class="moon-icon"></div>
+					<div v-else-if="data.localConfig.theme === 'light'" class="sun-icon"></div>
 				</div>
 				<ul class="nav-links">
 					<li><a href="#" @click="data.tab='home'">Home</a></li>
@@ -328,8 +328,8 @@
 						<div class="user-menu-wrapper" @click="data.userCtx.userMenu=!data.userCtx.userMenu">
 							<a href="#" v-text="data.userCtx.username"></a>
 							<div class="user-menu" v-show="data.userCtx.userMenu">
-								<a href="#">Profile</a>
-								<a href="#">Settings</a>
+								<a href="#" @click="onUserProfile">Profile</a>
+								<a href="#" @click="onUserSettings">Settings</a>
 								<a href="#" @click="doLogout">Logout</a>
 							</div>
 						</div>
@@ -345,14 +345,16 @@
 			<span class="close-btn" @click="data.loginWindow=false">&times;</span>
 			<h2>Login & SignUp</h2> 
 			<div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
-			<input type="text" v-model="data.loginCtx.usernameInput" placeholder="Username(4~16 char)">
-			<input type="password" v-model="data.loginCtx.passwordInput" placeholder="Password(4~16 char)"> 
+			<input type="text" v-model="data.loginCtx.usernameInput" 
+				placeholder="Username(4~16 char)" @keydown.enter="doLogin">
+			<input type="password" v-model="data.loginCtx.passwordInput" 
+				placeholder="Password(4~16 char)" @keydown.enter="doLogin"> 
 			<button @click="doLogin">Confirm</button>
 		</div>
 	</div>
 
 	<main>
-		<section v-if="tab === 'dashboard'">
+		<section v-if="data.tab === 'dashboard'">
 			<h1>Dashboard</h1>
 			<div class="card-container">
 				<div class="card">
@@ -372,11 +374,11 @@
 				</div>
 			</div>
 		</section>
-		<section v-else-if="tab === 'home'">
+		<section v-else-if="data.tab === 'home'">
 			<h1>Welcome to Pulsear</h1>
 			<p>Select a section from the navigation menu to get started.</p>
 		</section>
-		<section v-else-if="tab === 'files'">
+		<section v-else-if="data.tab === 'files'">
 			<h1>Files</h1>
 		</section>
 	</main>
@@ -409,43 +411,43 @@
 	function doRefreshDom(el) {
 		Array.from(el.attributes).forEach(attribute => {
 			if(!Object.keys(directives).includes(attribute.name)) return;
-				with(data) {
-					directives[attribute.name](el, attribute.value);
-				}
+				directives[attribute.name](el, attribute.value);
 			}
 		)
 	}
 
 	function doRegisterListeners(el) {
 		Array.from(el.attributes).forEach(attribute => {
-			if(Object.keys(onceDirectives).includes(attribute.name)) {
-				with(data) {
-					onceDirectives[attribute.name](el, attribute.value);
-				}
+			if (Object.keys(onceDirectives).includes(attribute.name)) {
+				onceDirectives[attribute.name](el, attribute.value);
 			} else if (attribute.name.startsWith("@")) {
-				let event = attribute.name.replace('@', '');
+				let keytype = null;
+				let event;
+				if ((attribute.name.includes("keyup") || attribute.name.includes("keydown")) &&
+					 attribute.name.includes(".")) {
+					keytype = attribute.name.split('.')[1];  
+					event = attribute.name.split('.')[0].replace('@', '');
+				} else {
+					event = attribute.name.replace('@', '');
+				}
 				let expression = attribute.value;
-				with(data) {
-					el.addEventListener(event, evt => {
-						evt.stopPropagation();
+				el.addEventListener(event, evt => {
+					evt.stopPropagation();
+					if (keytype == null || evt.key.toLowerCase() === keytype) {
 						if (typeof eval(expression) === 'function') {
 							window[expression](el);
 						}
-					})
-				}
-			}
+					}
+				})
+			} 
 		})
 	}
 
 	function refreshDom() {
 		console.log('refresh dom');
-		document.documentElement.setAttribute('data-theme', data.theme);
+		document.documentElement.setAttribute('data-theme', data.localConfig.theme);
 		updateLocalConfig();
 		walkDom(document.documentElement, doRefreshDom);
-	}
-
-	function registerListeners() {
-		walkDom(document.documentElement, doRegisterListeners);
 	}
 
 	function walkDom(el, callback) {
@@ -474,11 +476,9 @@
 			let dom = condition_dom_list[i].dom;
 			let expr = condition_dom_list[i].expr;
 			let hiti = false;
-			with(data) {
-				if (i == condition_dom_list.length - 1 || eval(expr)) {
-					dom.style.display = 'block';
-					break;
-				}
+			if (i == condition_dom_list.length - 1 || eval(expr)) {
+				dom.style.display = 'block';
+				break;
 			}
 		}
 	}
@@ -519,7 +519,7 @@
 			})
 		}).then(response => {
 			if (!response.ok) {
-				console.log("login bad response:", response);
+				console.error("login bad response:", response);
 				data.loginCtx.alertMessage = "server response:" + response.statusText
 				throw new Error(data.loginCtx.alertMessage);
 			}
@@ -529,7 +529,7 @@
 			onLogin(json);
 		}).catch(error => {
 			data.loginCtx.alertMessage = "inner error:" + error
-			console.log(data.loginCtx.alertMessage)
+			console.error(data.loginCtx.alertMessage)
 		})
 	}
 
@@ -545,7 +545,8 @@
 				},
 				user_ctx: {
 					username: data.userCtx.username,
-					token: data.userCtx.token
+					token: data.userCtx.token,
+					state: "Conn"
 				},
 				config: {
 					theme: data.localConfig.theme
@@ -553,7 +554,7 @@
 			})
 		}).then(response => {
 			if (!response.ok) {
-				console.log("logout bad response:", response);
+				console.error("logout bad response:", response);
 				data.loginCtx.alertMessage = "server response:" + response.statusText
 				throw new Error(data.loginCtx.alertMessage);
 			}
@@ -562,7 +563,7 @@
 			console.log('get logout response: ', json);
 			onLogout(json);
 		}).catch(error => {
-			console.log("logout error ", error);
+			console.error("logout error ", error);
 		})
 	}
 
@@ -579,10 +580,13 @@
 		localStorage.setItem('pulsearLocalConfig', JSON.stringify(data.localConfig));
 	}
 
-	function loadLocalConfig() {
+	function loadLocalConfig(rawData) {
 		if (localStorage.getItem('pulsearLocalConfig') != null) {
-			data.localConfig = JSON.parse(localStorage.getItem('pulsearLocalConfig'));
-			console.log("localConfig init: ", data.localConfig);
+			let localConfig = JSON.parse(localStorage.getItem('pulsearLocalConfig'));
+			console.log("localConfig init as: ", localConfig);
+			rawData.localConfig.theme = localConfig.theme;
+			rawData.localConfig.userToken = localConfig.userToken;
+			rawData.localConfig.username = localConfig.username;
 		}
 	}
 
@@ -605,25 +609,32 @@
 		data.userCtx.token = "";
 		data.localConfig.userToken = "";
 		data.localConfig.username = "";
-		}
+	}
 
-	function init() {
+	function onUserProfile() {
+
+	}
+
+	function onUserSettings() {
+
+	}
+
+	function init(rawData) {
 		var userMenu = document.querySelector('.user-menu');
 		var userMenuWrapper = document.querySelector('.user-menu-wrapper');
 		document.addEventListener('click', evt => {
 			if (!userMenuWrapper.contains(event.target) && !userMenu.contains(event.target)) {
+				console.log("close userMenu");
 				data.userCtx.userMenu = false;
 			}
 		});
-		loadLocalConfig();
-		if (data.localConfig.userToken && data.localConfig.username) {
-			data.userCtx.login = true
-			data.userCtx.username = data.localConfig.username;
-			data.userCtx.token = data.localConfig.userToken;
-			data.theme = data.localConfig.theme;
+		loadLocalConfig(rawData);
+		if (rawData.localConfig.userToken && rawData.localConfig.username) {
+			rawData.userCtx.login = true;
+			rawData.userCtx.username = rawData.localConfig.username;
+			rawData.userCtx.token = rawData.localConfig.userToken;
 		}
-		refreshDom();
-		registerListeners();
+		walkDom(document.documentElement, doRegisterListeners)
 	}
 
 	function onResponseCode(code) {
@@ -633,12 +644,11 @@
 	}
 
 	function toggleTheme() {
-		if (data.theme === 'dark') {
-			data.theme = 'light';
+		if (data.localConfig.theme === 'dark') {
+			data.localConfig.theme = 'light';
 		} else {
-			data.theme = 'dark';
+			data.localConfig.theme = 'dark';
 		}
-		data.localConfig.theme = data.theme;
 	}
 
 	let root = document;
@@ -665,14 +675,12 @@
 			login: prefix_ + "login",
 			logout: prefix_ + "logout",
 		},
-		theme: "dark",
 		localConfig: {
 			theme: "dark",
 			userToken: "",
 			username: "",
 		}
 	}
-	data = observe(rawData);
 	let directives = {
 		'v-text': (el, expr) => {
 			el.innerText = eval(expr);
@@ -697,6 +705,8 @@
 			}
 		},
 	}
-	init();
+	init(rawData);
+	data = observe(rawData);
+	refreshDom();
 </script>
 </html>
