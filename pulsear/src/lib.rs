@@ -18,15 +18,22 @@ pub struct LoginRequest {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+pub struct UserConfig {
+    theme: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct LoginResponse {
     basic_info: StreamBasicInfo,
     user_ctx: UserCtx,
+    config: UserConfig,
     code: ResponseCode,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct LogoutRequest {
     basic_info: StreamBasicInfo,
+    config: UserConfig,
     user_ctx: UserCtx,
 }
 
@@ -67,9 +74,19 @@ pub fn get_system_timestamp_milli() -> u64 {
     since_the_epoch.as_millis() as u64    
 }
 
-fn gen_random_token<LoginInfo: std::hash::Hash>(login_info: &LoginInfo) -> String {
+pub fn gen_random_token<LoginInfo: std::hash::Hash>(login_info: &LoginInfo) -> String {
   use std::hash::{Hasher, DefaultHasher};
   let mut hasher = DefaultHasher::new();
   login_info.hash(&mut hasher);
   hasher.finish().to_string()
+}
+
+pub fn load_user_config(req: &LoginRequest) -> UserConfig {
+    return UserConfig {
+        theme: "dark".to_string()
+    }
+}
+
+pub fn store_user_config(req: &LogoutRequest) {
+
 }

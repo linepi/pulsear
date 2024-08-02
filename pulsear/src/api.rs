@@ -40,6 +40,7 @@ pub async fn login(param: web::Json<LoginRequest>) -> HttpResponse {
         basic_info: StreamBasicInfo {
           time_stamp: get_system_timestamp_milli()
         },
+        config: load_user_config(&param.0),
         code: ResponseCode::Ok
       };
     },
@@ -52,6 +53,7 @@ pub async fn login(param: web::Json<LoginRequest>) -> HttpResponse {
         basic_info: StreamBasicInfo {
           time_stamp: get_system_timestamp_milli()
         },
+        config: load_user_config(&param.0),
         code: ResponseCode::Ok
       };
     }
@@ -68,5 +70,6 @@ pub async fn logout(param: web::Json<LogoutRequest>) -> HttpResponse {
     },
     code: ResponseCode::Ok
   };
+  store_user_config(&param.0);
   HttpResponse::Ok().json(logout_response)
 }
