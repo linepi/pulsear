@@ -2,284 +2,690 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title v-text="data.webTitle"></title>
-    <link rel="stylesheet" v-href="data.resources_prefix + 'styles.css'">
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title v-text="data.webTitle"></title>
+	<style>
+	/* ------------------------- theme ------------------------- */
+	:root {
+		--background-color: #f4f4f4;
+		--text-color: #333;
+		--header-background: #007BFF;
+		--card-background: #fff;
+		--card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+		--link-color: #fff;
+		--link-hover-color: #FFD700;
+		--popup-bg-color: #fff;
+		--popup-text-color: #333;
+		--popup-h2-color: var(--header-background);
+		--close-btn-color: #aaa;
+		--close-btn-hover-color: #007BFF;
+		--button-bg-color: #007BFF;
+		--button-bg-hover-color: #0056b3;
+		--form-border-color: #ccc;
+		--form-bg-color: #fff;
+	}
+
+	[data-theme="dark"] {
+		--background-color: #1a1a1a;
+		--text-color: #f4f4f4;
+		--header-background: #1a1a1a;
+		--card-background: #333;
+		--card-shadow: 0 4px 8px rgba(255, 255, 255, 0.1);
+		--link-color: #f4f4f4;
+		--link-hover-color: #FFD700;
+		--popup-bg-color: #333;
+		--popup-text-color: #f4f4f4;
+		--popup-h2-color: var(--popup-text-color);
+		--close-btn-color: #f4f4f4;
+		--close-btn-hover-color: #FFD700;
+		--button-bg-color: #4e4c43;
+		--button-bg-hover-color: #e6af00;
+		--form-border-color: #f4f4f4;
+		--form-bg-color: #444;
+	}
+
+	.theme-toggle {
+		cursor: pointer;
+		width: 1.2em; 
+		height: 1.2em;
+		margin-right: 0.5em; 
+		transition: transform 0.3s ease;
+		display: inline-flex; 
+		align-items: center;
+		justify-content: center;
+	}
+
+	.theme-toggle .sun-icon {
+		display: block;
+		width: 70%; 
+		height: 70%;
+		background-color: #f1c40f; 
+		border-radius: 50%; 
+		box-shadow: 0 0 0.2em #f1c40f; 
+	}
+
+	.theme-toggle .moon-icon {
+		display: block;
+		width: 70%;
+		height: 70%;
+		background: #1a1a1a; 
+		border-radius: 50%;
+		box-shadow: 0.2rem 0.2rem 0 0 #fff77e;
+		margin-bottom: 0.4rem;
+		margin-right: 0.4rem;
+	}
+
+	.nav-left {
+		display: flex;
+		align-items: center;
+	}
+
+	.nav-links {
+		list-style: none;
+		display: flex;
+		align-items: center;
+		margin: 0;
+		padding: 0;
+	}
+
+	.nav-links li {
+		margin-left: 1em;
+	}
+
+	.nav-links li:first-child {
+		margin-left: 1; 
+	}
+
+	/* ------------------- main ------------------------- */
+
+	body {
+		font-family: Arial, sans-serif;
+		margin: 0;
+		padding: 0;
+		background: var(--background-color);
+		color: var(--text-color);
+		transition: background-color 0.3s, color 0.3s;
+	}
+
+	header {
+		background: var(--header-background);
+		color: #fff;
+		padding: 1em 0;
+		box-shadow: var(--card-shadow);
+		position: fixed;
+		width: 100%;
+		top: 0;
+	}
+
+	nav {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 80%;
+		margin: 0 auto;
+	}
+
+	.logo {
+		font-size: 1.5em;
+	}
+
+	nav ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+	}
+
+	nav ul li {
+		margin-left: 1em;
+	}
+
+	nav ul li a {
+		color: var(--link-color);
+		text-decoration: none;
+		transition: color 0.3s ease;
+	}
+
+	nav ul li a:hover {
+		color: var(--link-hover-color);
+	}
+
+	main {
+		padding: 80px 0 20px;
+		width: 80%;
+		margin: 0 auto;
+	}
+
+	.card-container {
+		display: flex;
+		justify-content: space-around;
+		flex-wrap: wrap;
+	}
+
+	.card {
+		background: var(--card-background);
+		border-radius: 10px;
+		box-shadow: var(--card-shadow);
+		margin: 1em;
+		flex: 1 1 calc(220px);
+		text-align: center;
+		padding: 1.2em;
+		transition: transform 0.3s ease, box-shadow 0.3s ease;
+	}
+
+	.card:hover {
+		transform: translateY(-10px);
+		box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+	}
+
+	.card i {
+		color: var(--header-background);
+	}
+
+	.card h3 {
+		margin: 1em 0 0.5em;
+	}
+
+	.card p {
+		color: var(--text-color);
+	}
+
+	.popup {
+		display: none; 
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background-color: rgba(0, 0, 0, 0.5);
+		z-index: 1000;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		animation: fadeIn 0.5s ease-in-out;
+	}
+
+	.popup-content {
+		position: relative;
+		background-color: var(--popup-bg-color);
+		color: var(--popup-text-color);
+		padding: 30px; 
+		border-radius: 10px; 
+		width: 350px;
+		max-width: 90%;
+		text-align: center;
+		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2); 
+		animation: slideIn 0.4s ease-in-out; 
+	}
+
+	.popup-content h2 {
+		margin: 0 0 20px; 
+		font-size: 24px;
+		color: var(--popup-h2-color);
+	}
+
+	.close-btn {
+		position: absolute; 
+		top: 10px; 
+		right: 10px; 
+		font-size: 24px;
+		cursor: pointer;
+		color: var(--close-btn-color);
+		transition: color 0.3s;
+	}
+
+	.close-btn:hover {
+		color: var(--close-btn-hover-color);
+	}
+
+	.popup-content input[type="text"],
+	.popup-content input[type="password"] {
+		width: calc(100% - 20px); 
+		padding: 10px;
+		margin: 10px 0; 
+		color: var(--popup-text-color);
+		border: 1px solid var(--form-border-color);
+		background-color: var(--form-bg-color);
+		border-radius: 5px;
+		font-size: 16px;
+	}
+
+	.popup-content button {
+		padding: 10px 20px;
+		background-color: var(--button-bg-color);
+		color: #fff;
+		border: none;
+		border-radius: 5px;
+		font-size: 16px;
+		cursor: pointer;
+		transition: background-color 0.3s;
+	}
+
+	.popup-content button:hover {
+		background-color: var(--button-bg-hover-color);
+	}
+
+	.alert-message {
+		color: #d9534f; 
+		background-color: #f2dede; 
+		border: 1px solid #ebccd1; 
+		padding: 10px;
+		margin: 10px 0; 
+		border-radius: 5px;
+		font-size: 14px;
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	@keyframes slideIn {
+		from { transform: translateY(-50px); opacity: 0; }
+		to { transform: translateY(0); opacity: 1; }
+	}
+
+  .user-menu {
+    position: absolute;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    min-width: 150px;
+    z-index: 1000;
+  }
+
+  .user-menu a {
+    display: block;
+    padding: 8px 16px;
+    text-decoration: none;
+    color: var(--text-color);
+    transition: background-color 0.3s ease;
+  }
+
+  .user-menu a:hover {
+    background-color: var(--link-hover-color);
+  }
+
+  .user-menu-wrapper.active .user-menu {
+    display: block; 
+  }
+	</style>
 </head>
 <body>
-    <header>
-        <nav>
-            <div class="logo" v-text="data.pageTitle"></div>
-            <ul>
-                <li><a href="#" @click="data.tab='home'">Home</a></li>
-                <li><a href="#" @click="data.tab='dashboard'">Dashboard</a></li>
-                <li><a href="#" @click="data.tab='files'">Files</a></li>
-                <li><a href="#" @click="data.tab='settings'">Settings</a></li>
-                <li><a href="#" @click="data.tab='about'">About</a></li>
-                <li v-if="!data.userCtx.login"><a @click="data.loginWindow=true">Sign In</a></li>
-                <li v-else><a v-text="data.userCtx.username"></a></li>
-            </ul>
-        </nav>
-    </header>
+	<header>
+		<nav>
+			<div class="logo" v-text="data.pageTitle"></div>
+			 <div class="nav-left">
+				<div class="theme-toggle" @click="toggleTheme">
+					<div v-if="data.theme === 'dark'" class="moon-icon"></div>
+					<div v-else-if="data.theme === 'light'" class="sun-icon"></div>
+				</div>
+				<ul class="nav-links">
+					<li><a href="#" @click="data.tab='home'">Home</a></li>
+					<li><a href="#" @click="data.tab='dashboard'">Dashboard</a></li>
+					<li><a href="#" @click="data.tab='files'">Files</a></li>
+					<li><a href="#" @click="data.tab='settings'">Settings</a></li>
+					<li v-if="!data.userCtx.login">
+						<a href="#" @click="data.loginWindow=true">Sign In</a>
+					</li>
+					<li v-else>
+						<div class="user-menu-wrapper" @click="data.userCtx.userMenu=!data.userCtx.userMenu">
+							<a href="#" v-text="data.userCtx.username"></a>
+							<div class="user-menu" v-show="data.userCtx.userMenu">
+								<a href="#">Profile</a>
+								<a href="#">Settings</a>
+								<a href="#" @click="doLogout">Logout</a>
+							</div>
+						</div>
+					</li>
+				</ul>
+			</div>
+		</nav>
+	</header>
 
-    <!-- 弹窗的容器 -->
-    <div class="popup" v-show="data.loginWindow" v-show-bind="onPopLoginWindow">
-        <div class="popup-content">
-            <span class="close-btn" @click="data.loginWindow=false">&times;</span>
-            <h2>Login & SignUp</h2> 
-            <div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
-            <input type="text" v-model="data.loginCtx.usernameInput" placeholder="Username(4~16 char)">
-            <input type="password" v-model="data.loginCtx.passwordInput" placeholder="Password(4~16 char)"> 
-            <button @click="doLogin">Confirm</button>
-        </div>
-    </div>
+	<!-- 弹窗的容器 -->
+	<div class="popup" v-show="data.loginWindow" v-show-bind="onPopLoginWindow">
+		<div class="popup-content">
+			<span class="close-btn" @click="data.loginWindow=false">&times;</span>
+			<h2>Login & SignUp</h2> 
+			<div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
+			<input type="text" v-model="data.loginCtx.usernameInput" placeholder="Username(4~16 char)">
+			<input type="password" v-model="data.loginCtx.passwordInput" placeholder="Password(4~16 char)"> 
+			<button @click="doLogin">Confirm</button>
+		</div>
+	</div>
 
-    <main>
-        <section v-if="tab === 'dashboard'">
-            <h1>Dashboard</h1>
-            <div class="card-container">
-                <div class="card">
-                    <i class="fas fa-hdd fa-4x"></i>
-                    <h3>Storage</h3>
-                    <p>500 GB used of 1 TB</p>
-                </div>
-                <div class="card">
-                    <i class="fas fa-network-wired fa-4x"></i>
-                    <h3>Network</h3>
-                    <p>Up: 50 Mbps / Down: 100 Mbps</p>
-                </div>
-                <div class="card">
-                    <i class="fas fa-user-friends fa-4x"></i>
-                    <h3>Users</h3>
-                    <p>15 Active Users</p>
-                </div>
-            </div>
-        </section>
-        <section v-else-if="tab === 'home'">
-            <h1>Welcome to Pulsear</h1>
-            <p>Select a section from the navigation menu to get started.</p>
-        </section>
-        <section v-else-if="tab === 'files'">
-            <h1>Files</h1>
-        </section>
-        <section v-else-if="tab === 'settings'">
-            <h1>Settings</h1>
-        </section>
-        <section v-else-if="tab === 'about'">
-            <h1>About</h1>
-        </section>
-    </main>
-    <script>
-        function observe(data) {
-            if (typeof data !== 'object' || data === null) {
-                return data;
-            }
-
-            const proxy = new Proxy(data, {
-                set(target, key, value) {
-                    const oldValue = target[key];
-                    if (oldValue !== value) {
-                        target[key] = value; 
-                        refreshDom();
-                    }
-                }
-            });
-
-            for (const key in data) {
-                if (data.hasOwnProperty(key)) {
-                    data[key] = observe(data[key]);
-                }
-            }
-
-            return proxy;
-        }
-
-        function doRefreshDom(el) {
-            Array.from(el.attributes).forEach(attribute => {
-                if(!Object.keys(directives).includes(attribute.name)) return;
-                    with(data) {
-                        directives[attribute.name](el, attribute.value)
-                    }
-                }
-            )
-        }
-
-        function doRegisterListeners(el) {
-            Array.from(el.attributes).forEach(attribute => {
-                if(Object.keys(onceDirectives).includes(attribute.name)) {
-                    with(data) {
-                        onceDirectives[attribute.name](el, attribute.value)
-                    }
-                } else if (attribute.name.startsWith("@")) {
-                    let event = attribute.name.replace('@', '');
-                    let expression = attribute.value;
-                    with(data) {
-                        el.addEventListener(event, () => {
-                            if (typeof eval(expression) === 'function') {
-                                window[expression](el)
-                            } else {
-                                eval(expression)
-                            }
-                        })
-                    }
-                }
-            })
-        }
-
-        function refreshDom() {
-            console.log('refresh dom')
-            walkDom(document.head, doRefreshDom)
-            walkDom(document.body, doRefreshDom)
-        }
-
-        function registerListeners() {
-            walkDom(document.head, doRegisterListeners)
-            walkDom(document.body, doRegisterListeners)
-        }
-
-        function walkDom(el, callback) {
-            callback(el);
-            el = el.firstElementChild;
-            while (el) {
-                walkDom(el, callback);
-                el = el.nextElementSibling;
-            }
-        }
-
-        function vIfImpl(el, value) {
-            let condition_dom_list = []
-            while(el) {
-                el.style.display = 'none';
-                let expression = null;
-                ['v-if', 'v-else-if', 'v-else'].forEach(conname => {
-                    if (el.hasAttribute(conname)) {
-                        expression = el.getAttribute(conname);
-                    }
-                })
-                condition_dom_list.push({dom: el, expr: expression})
-                el = el.nextElementSibling;
-            } 
-            for (i in condition_dom_list) {
-                let dom = condition_dom_list[i].dom;
-                let expr = condition_dom_list[i].expr;
-                let hiti = false;
-                with(data) {
-                    if (i == condition_dom_list.length - 1 || eval(expr)) {
-                        dom.style.display = 'block';
-                        break;
-                    }
-                }
-            }
-        }
-
-        function onPopLoginWindow(el) {
-            el.style.display = "flex"; 
-            el.focus(); 
-        }
-
-        function doLogin() {
-            if (data.loginCtx.usernameInput.length < 4 ||
-                data.loginCtx.usernameInput.length > 16) {
-                data.loginCtx.alertMessage = "username length not valid";
-                console.log(data.loginCtx.alertMessage)
-                return;
-            }
-            if (data.loginCtx.passwordInput.length < 4 ||
-                data.loginCtx.passwordInput.length > 16) {
-                data.loginCtx.alertMessage = "password length not valid";
-                console.log(data.loginCtx.alertMessage)
-                return;
-            }
-            fetch(data.api.login, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json; charset=UTF-8'
-                },
-                body: JSON.stringify({
-                    username: data.loginCtx.usernameInput,
-                    password: data.loginCtx.passwordInput,
-                })
-            }).then(response => {
-                if (!response.ok) {
-                    data.loginCtx.alertMessage = "server response:" + response.statusText
-                    throw new Error(data.loginCtx.alertMessage);
-                }
-                return response.json();
-            }).then(json => {
-                console.log('get response: ', json)
-                data.userCtx.login = true
-                data.userCtx.username = json.username;
-                data.userCtx.token = json.token;
-                data.loginCtx.alertMessage = "";
-                data.loginWindow = false
-            }).catch(error => {
-                data.loginCtx.alertMessage = "inner error:" + error
-                console.log(data.loginCtx.alertMessage)
-            })
-        }
-
-        function jsSetValue(varString, valueString) {
-            const keys = varString.split('.');  
-            let obj = window; 
-            for (let i = 0; i < keys.length - 1; i++) {
-                obj = obj[keys[i]];
-            }
-            obj[keys[keys.length - 1]] = valueString; 
-        }
-    </script>
-
-    <script>
-        let root = document;
-        let prefix_ = 'http://localhost:6543/';
-        let rawData = {
-            prefix: prefix_,
-            resources_prefix: prefix_ + 'resources/',
-            tab: 'home',
-            webTitle: 'Pulsear',
-            pageTitle: 'Pulsear',
-            loginWindow: false,
-            userCtx: {
-                username: "",
-                token: "",
-                login: false
-            },
-            loginCtx: {
-                usernameInput: "",
-                passwordInput: "",
-                alertMessage: ""
-            },
-            api: {
-                login: prefix_ + "login",
-            }
-        }
-        data = observe(rawData);
-        let directives = {
-            'v-text': (el, expr) => {
-                el.innerText = eval(expr);
-            },
-            'v-show': (el, expr) => {
-                el.style.display = eval(expr) ? 'block' : 'none';
-            },
-            'v-show-bind': (el, func) => {
-                if (el.style.display != 'none') window[func](el);
-            },
-            'v-href': (el, expr) => {
-                el.href = eval(expr)
-            },
-            'v-if': vIfImpl,
-        }
-        let onceDirectives = {
-            'v-model': (el, variable) => {
-                if (el.tagName === "INPUT") {
-                    el.addEventListener('input', function(e) {
-                        jsSetValue(this.getAttribute('v-model'), this.value)
-                    })
-                }
-            },
-        }
-        refreshDom();
-        registerListeners();
-    </script>
+	<main>
+		<section v-if="tab === 'dashboard'">
+			<h1>Dashboard</h1>
+			<div class="card-container">
+				<div class="card">
+					<i class="fas fa-hdd fa-4x"></i>
+					<h3>Storage</h3>
+					<p>500 GB used of 1 TB</p>
+				</div>
+				<div class="card">
+					<i class="fas fa-network-wired fa-4x"></i>
+					<h3>Network</h3>
+					<p>Up: 50 Mbps / Down: 100 Mbps</p>
+				</div>
+				<div class="card">
+					<i class="fas fa-user-friends fa-4x"></i>
+					<h3>Users</h3>
+					<p>15 Active Users</p>
+				</div>
+			</div>
+		</section>
+		<section v-else-if="tab === 'home'">
+			<h1>Welcome to Pulsear</h1>
+			<p>Select a section from the navigation menu to get started.</p>
+		</section>
+		<section v-else-if="tab === 'files'">
+			<h1>Files</h1>
+		</section>
+	</main>
 </body>
+<script>
+	function observe(data) {
+		if (typeof data !== 'object' || data === null) {
+			return data;
+		}
+
+		const proxy = new Proxy(data, {
+			set(target, key, value) {
+				const oldValue = target[key];
+				if (oldValue !== value) {
+					target[key] = value; 
+					refreshDom();
+				}
+			}
+		});
+
+		for (const key in data) {
+			if (data.hasOwnProperty(key)) {
+				data[key] = observe(data[key]);
+			}
+		}
+
+		return proxy;
+	}
+
+	function doRefreshDom(el) {
+		Array.from(el.attributes).forEach(attribute => {
+			if(!Object.keys(directives).includes(attribute.name)) return;
+				with(data) {
+					directives[attribute.name](el, attribute.value);
+				}
+			}
+		)
+	}
+
+	function doRegisterListeners(el) {
+		Array.from(el.attributes).forEach(attribute => {
+			if(Object.keys(onceDirectives).includes(attribute.name)) {
+				with(data) {
+					onceDirectives[attribute.name](el, attribute.value);
+				}
+			} else if (attribute.name.startsWith("@")) {
+				let event = attribute.name.replace('@', '');
+				let expression = attribute.value;
+				with(data) {
+					el.addEventListener(event, () => {
+						if (typeof eval(expression) === 'function') {
+							window[expression](el);
+						}
+					})
+				}
+			}
+		})
+	}
+
+	function refreshDom() {
+		console.log('refresh dom');
+		document.documentElement.setAttribute('data-theme', data.theme);
+		updateLocalConfig();
+		walkDom(document.documentElement, doRefreshDom);
+	}
+
+	function registerListeners() {
+		walkDom(document.documentElement, doRegisterListeners);
+	}
+
+	function walkDom(el, callback) {
+		callback(el);
+		el = el.firstElementChild;
+		while (el) {
+			walkDom(el, callback);
+			el = el.nextElementSibling;
+		}
+	}
+
+	function vIfImpl(el, value) {
+		let condition_dom_list = []
+		while(el) {
+			el.style.display = 'none';
+			let expression = null;
+			['v-if', 'v-else-if', 'v-else'].forEach(conname => {
+				if (el.hasAttribute(conname)) {
+					expression = el.getAttribute(conname);
+				}
+			})
+			condition_dom_list.push({dom: el, expr: expression})
+			el = el.nextElementSibling;
+		} 
+		for (i in condition_dom_list) {
+			let dom = condition_dom_list[i].dom;
+			let expr = condition_dom_list[i].expr;
+			let hiti = false;
+			with(data) {
+				if (i == condition_dom_list.length - 1 || eval(expr)) {
+					dom.style.display = 'block';
+					break;
+				}
+			}
+		}
+	}
+
+	function onPopLoginWindow(el) {
+		el.style.display = "flex"; 
+		el.focus(); 
+	}
+
+	function doLogin() {
+		if (data.loginCtx.usernameInput.length < 4 ||
+			data.loginCtx.usernameInput.length > 16) {
+			data.loginCtx.alertMessage = "username length not valid";
+			console.log(data.loginCtx.alertMessage)
+			return;
+		}
+		if (data.loginCtx.passwordInput.length < 4 ||
+			data.loginCtx.passwordInput.length > 16) {
+			data.loginCtx.alertMessage = "password length not valid";
+			console.log(data.loginCtx.alertMessage)
+			return;
+		}
+		fetch(data.api.login, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json; charset=UTF-8'
+			},
+			body: JSON.stringify({
+				basic_info: {
+					time_stamp: Date.now()
+				},
+				login_info: {
+					username: data.loginCtx.usernameInput,
+					choice: {
+						Password: data.loginCtx.passwordInput
+					}
+				}
+			})
+		}).then(response => {
+			if (!response.ok) {
+				console.log("login bad response:", response);
+				data.loginCtx.alertMessage = "server response:" + response.statusText
+				throw new Error(data.loginCtx.alertMessage);
+			}
+			return response.json();
+		}).then(json => {
+			console.log('get login response: ', json);
+			onLogin(json);
+		}).catch(error => {
+			data.loginCtx.alertMessage = "inner error:" + error
+			console.log(data.loginCtx.alertMessage)
+		})
+	}
+
+	function doLogout() {
+		fetch(data.api.logout, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json; charset=UTF-8'
+			},
+			body: JSON.stringify({
+				basic_info: {
+					time_stamp: Date.now()
+				},
+				user_ctx: {
+					username: data.userCtx.username,
+					token: data.userCtx.token
+				}
+			})
+		}).then(response => {
+			if (!response.ok) {
+				console.log("logout bad response:", response);
+				data.loginCtx.alertMessage = "server response:" + response.statusText
+				throw new Error(data.loginCtx.alertMessage);
+			}
+			return response.json();
+		}).then(json => {
+			console.log('get logout response: ', json);
+			onLogout(json);
+		}).catch(error => {
+			console.log("logout error ", error);
+		})
+	}
+
+	function jsSetValue(varString, valueString) {
+		const keys = varString.split('.');  
+		let obj = window; 
+		for (let i = 0; i < keys.length - 1; i++) {
+			obj = obj[keys[i]];
+		}
+		obj[keys[keys.length - 1]] = valueString; 
+	}
+
+	function updateLocalConfig() {
+		localStorage.setItem('pulsearLocalConfig', JSON.stringify(data.localConfig));
+	}
+
+	function loadLocalConfig() {
+		if (localStorage.getItem('pulsearLocalConfig') != null) {
+			data.localConfig = JSON.parse(localStorage.getItem('pulsearLocalConfig'));
+			if (data.localConfig.userToken && data.localConfig.username) {
+				data.userCtx.login = true
+				data.userCtx.username = data.localConfig.username;
+				data.userCtx.token = data.localConfig.userToken;
+			}
+		}
+	}
+
+	function onLogin(response) {
+		onResponseCode(response.code);
+		data.userCtx.login = true
+		data.userCtx.username = response.user_ctx.username;
+		data.userCtx.token = response.user_ctx.token;
+		data.localConfig.userToken = data.userCtx.token;
+		data.localConfig.username = data.userCtx.username;
+		data.loginCtx.alertMessage = "";
+		data.loginWindow = false
+	}
+
+	function onLogout(response) {
+		onResponseCode(response.code);
+		data.userCtx.login = false
+		data.userCtx.username = "";
+		data.userCtx.token = "";
+		data.localConfig.userToken = "";
+		data.localConfig.username = "";
+	}
+
+	function onResponseCode(code) {
+		if (typeof code === "object") {
+			throw new Error(code.Err);
+		}
+	}
+
+	function toggleTheme() {
+		if (data.theme === 'dark') {
+			data.theme = 'light';
+		} else {
+			data.theme = 'dark';
+		}
+		data.localConfig.theme = data.theme;
+	}
+
+	let root = document;
+	let prefix_ = 'giocdanewla';
+	let rawData = {
+		prefix: prefix_,
+		resources_prefix: prefix_ + 'resources/',
+		tab: 'home',
+		webTitle: 'Pulsear',
+		pageTitle: 'Pulsear',
+		loginWindow: false,
+		userCtx: {
+			username: "",
+			token: "",
+			login: false,
+			userMenu: false,
+		},
+		loginCtx: {
+			usernameInput: "",
+			passwordInput: "",
+			alertMessage: ""
+		},
+		api: {
+			login: prefix_ + "login",
+			logout: prefix_ + "logout",
+		},
+		theme: "dark",
+		localConfig: {
+			theme: "",
+			userToken: "",
+			username: "",
+		}
+	}
+	data = observe(rawData);
+	let directives = {
+		'v-text': (el, expr) => {
+			el.innerText = eval(expr);
+		},
+		'v-show': (el, expr) => {
+			el.style.display = eval(expr) ? 'block' : 'none';
+		},
+		'v-show-bind': (el, func) => {
+			if (el.style.display != 'none') window[func](el);
+		},
+		'v-href': (el, expr) => {
+			el.href = eval(expr);
+		},
+		'v-if': vIfImpl,
+	}
+	let onceDirectives = {
+		'v-model': (el, variable) => {
+			if (el.tagName === "INPUT") {
+				el.addEventListener('input', function(e) {
+					jsSetValue(this.getAttribute('v-model'), this.value);
+				})
+			}
+		},
+	}
+	loadLocalConfig();
+	refreshDom();
+	registerListeners();
+</script>
 </html>
