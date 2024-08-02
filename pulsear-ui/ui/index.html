@@ -14,7 +14,7 @@
 		--card-background: #fff;
 		--card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 		--link-color: #fff;
-		--link-hover-color: #FFD700;
+		--link-hover-color: #ffcc00;
 		--popup-bg-color: #fff;
 		--popup-text-color: #333;
 		--popup-h2-color: var(--header-background);
@@ -27,13 +27,13 @@
 	}
 
 	[data-theme="dark"] {
-		--background-color: #1a1a1a;
+		--background-color: #101010df;
 		--text-color: #f4f4f4;
 		--header-background: #1a1a1a;
-		--card-background: #333;
-		--card-shadow: 0 4px 8px rgba(255, 255, 255, 0.1);
+		--card-background: #4d4d4d;
+		--card-shadow: 0 4px 8px rgba(255, 255, 255, 0);
 		--link-color: #f4f4f4;
-		--link-hover-color: #FFD700;
+		--link-hover-color: #ffd900;
 		--popup-bg-color: #333;
 		--popup-text-color: #f4f4f4;
 		--popup-h2-color: var(--popup-text-color);
@@ -286,32 +286,26 @@
 		to { transform: translateY(0); opacity: 1; }
 	}
 
-  .user-menu {
-    position: absolute;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    background-color: var(--background-color);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-    min-width: 150px;
-    z-index: 1000;
-  }
+	.user-menu {
+		position: absolute;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		background-color: var(--background-color);
+		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+		min-width: 150px;
+		top: 4em; 
+		opacity: 0.9;
+		transition: opacity 0.3s ease, visibility 0.3s ease, top 0.3s ease;
+		border-radius: 8px; 
+	}
 
-  .user-menu a {
-    display: block;
-    padding: 8px 16px;
-    text-decoration: none;
-    color: var(--text-color);
-    transition: background-color 0.3s ease;
-  }
-
-  .user-menu a:hover {
-    background-color: var(--link-hover-color);
-  }
-
-  .user-menu-wrapper.active .user-menu {
-    display: block; 
-  }
+	.user-menu a {
+		display: block;
+		padding: 8px 16px;
+		text-decoration: none;
+		color: var(--text-color);
+	}
 	</style>
 </head>
 <body>
@@ -327,7 +321,6 @@
 					<li><a href="#" @click="data.tab='home'">Home</a></li>
 					<li><a href="#" @click="data.tab='dashboard'">Dashboard</a></li>
 					<li><a href="#" @click="data.tab='files'">Files</a></li>
-					<li><a href="#" @click="data.tab='settings'">Settings</a></li>
 					<li v-if="!data.userCtx.login">
 						<a href="#" @click="data.loginWindow=true">Sign In</a>
 					</li>
@@ -433,7 +426,8 @@
 				let event = attribute.name.replace('@', '');
 				let expression = attribute.value;
 				with(data) {
-					el.addEventListener(event, () => {
+					el.addEventListener(event, evt => {
+						evt.stopPropagation();
 						if (typeof eval(expression) === 'function') {
 							window[expression](el);
 						}
@@ -615,6 +609,16 @@
 		data.userCtx.token = "";
 		data.localConfig.userToken = "";
 		data.localConfig.username = "";
+		}
+
+	function init() {
+		var userMenu = document.querySelector('.user-menu');
+		var userMenuWrapper = document.querySelector('.user-menu-wrapper');
+		document.addEventListener('click', evt => {
+			if (!userMenuWrapper.contains(event.target) && !userMenu.contains(event.target)) {
+				data.userCtx.userMenu = false;
+			}
+		});
 	}
 
 	function onResponseCode(code) {
@@ -688,6 +692,7 @@
 			}
 		},
 	}
+	init();
 	loadLocalConfig();
 	refreshDom();
 	registerListeners();
