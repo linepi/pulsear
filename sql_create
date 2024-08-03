@@ -1,0 +1,39 @@
+CREATE TABLE `user` (
+    `id` int NOT NULL AUTO_INCREMENT COMMENT 'Primary Key',
+    `username` varchar(16) NOT NULL COMMENT 'Username',
+    `token` varchar(255) NOT NULL COMMENT 'User token, user unique',
+    `register_time` datetime NOT NULL COMMENT 'Register Time',
+    `last_updated_time` datetime NOT NULL COMMENT 'This row last updated time',
+    `last_login_time` datetime NOT NULL COMMENT 'Last login time',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `username` (`username`),
+    UNIQUE KEY `token` (`token`)
+) COMMENT '';
+
+CREATE TABLE `user_config` (
+    `id` int NOT NULL AUTO_INCREMENT COMMENT 'Primary Key',
+    `user_id` int NOT NULL COMMENT 'User foreign key',
+    `theme` varchar(16) DEFAULT NULL COMMENT 'Color theme',
+    PRIMARY KEY (`id`),
+    KEY `user_id` (`user_id`),
+    CONSTRAINT `user_config_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
+) COMMENT '';
+
+DELIMITER $$
+CREATE TRIGGER `before_user_insert` BEFORE INSERT ON `user`
+FOR EACH ROW
+BEGIN
+    SET NEW.register_time = NOW();
+    SET NEW.last_updated_time = NOW();
+    SET NEW.last_login_time = NOW();
+END$$
+CREATE TRIGGER `before_user_update` BEFORE UPDATE ON `user`
+FOR EACH ROW
+BEGIN
+    IF OLD.last_login_time != NEW.last_login_time THEN
+        SET NEW.last_updated_time = NOW();
+    ELSE
+        SET NEW.last_updated_time = NOW();
+    END IF;
+END$$
+DELIMITER ;

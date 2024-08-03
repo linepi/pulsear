@@ -346,10 +346,10 @@
 			<h2>Login & SignUp</h2> 
 			<div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
 			<input type="text" v-model="data.loginCtx.usernameInput" 
-				placeholder="Username(4~16 char)" @keydown.enter="doLogin">
+				placeholder="Username(4~16 char)" @keydown.enter="doLogin(false)">
 			<input type="password" v-model="data.loginCtx.passwordInput" 
-				placeholder="Password(4~16 char)" @keydown.enter="doLogin"> 
-			<button @click="doLogin">Confirm</button>
+				placeholder="Password(4~16 char)" @keydown.enter="doLogin(false)"> 
+			<button @click="doLogin(false)">Confirm</button>
 		</div>
 	</div>
 
@@ -489,40 +489,45 @@
 	}
 
 	function doLogin(isInit) {
-		if (data.loginCtx.usernameInput.length < 4 ||
-			data.loginCtx.usernameInput.length > 16) {
+		let username;
+		let choice = {};
+		if (isInit) {
+			username = data.localConfig.username;
+			choice.Token = data.localConfig.userToken;
+		} else {
+			username = data.loginCtx.usernameInput;
+			choice.Password = data.loginCtx.passwordInput;
+			if (choice.Password.length < 4 ||
+				choice.Password.length > 16) {
+				data.loginCtx.alertMessage = "password length not valid";
+				console.log(data.loginCtx.alertMessage)
+				return;
+			}
+		}
+		if (username.length < 4 ||
+			username.length > 16) {
 			data.loginCtx.alertMessage = "username length not valid";
 			console.log(data.loginCtx.alertMessage)
 			return;
 		}
-		if (data.loginCtx.passwordInput.length < 4 ||
-			data.loginCtx.passwordInput.length > 16) {
-			data.loginCtx.alertMessage = "password length not valid";
-			console.log(data.loginCtx.alertMessage)
-			return;
-		}
+
 		let loginRequest = {
 			basic_info: {
 				time_stamp: Date.now()
 			},
 			login_info: {
-				choice: {}
+				username: username,
+				choice: choice
 			}
 		}
-		if (isInit) {
-			loginRequest.login_info.username = data.localConfig.username;
-			loginRequest.login_info.choice.Token = data.localConfig.userToken;
-		} else {
-			loginRequest.login_info.username = data.loginCtx.usernameInput;
-			loginRequest.login_info.choice.Password = data.loginCtx.passwordInput;
-		}
 		let ret = true;
+		console.log("try login with request ", loginRequest);
 		fetch(data.api.login, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json; charset=UTF-8'
 			},
-			body: JSON.stringify()
+			body: JSON.stringify(loginRequest)
 		}).then(response => {
 			if (!response.ok) {
 				console.error("login bad response:", response);
@@ -542,24 +547,27 @@
 	}
 
 	function doLogout() {
+		let logoutRequest = {
+			basic_info: {
+				time_stamp: Date.now()
+			},
+			user_ctx: {
+				username: data.userCtx.username,
+				token: data.userCtx.token,
+				state: "Conn"
+			},
+			config: {
+				id: 0,
+				theme: data.localConfig.theme
+			}
+		};
+		console.log("try logout with request ", logoutRequest);
 		fetch(data.api.logout, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json; charset=UTF-8'
 			},
-			body: JSON.stringify({
-				basic_info: {
-					time_stamp: Date.now()
-				},
-				user_ctx: {
-					username: data.userCtx.username,
-					token: data.userCtx.token,
-					state: "Conn"
-				},
-				config: {
-					theme: data.localConfig.theme
-				}
-			})
+			body: JSON.stringify(logoutRequest)
 		}).then(response => {
 			if (!response.ok) {
 				console.error("logout bad response:", response);
@@ -637,17 +645,12 @@
 			}
 		});
 		loadLocalConfig(rawData);
-		if (rawData.localConfig.userToken && rawData.localConfig.username) {
-			if (doLogin(true)) {
-				rawData.userCtx.login = true;
-				rawData.userCtx.username = rawData.localConfig.username;
-				rawData.userCtx.token = rawData.localConfig.userToken;
-			}
-		}
 		walkDom(document.documentElement, doRegisterListeners)
 	}
 
 	function onResponseCode(code) {
+		// if server responsed code is enum::Ok, the code is "Ok" which is a string
+		// else enum::Err, then the code is { "Err": errmsg } which is an object
 		if (typeof code === "object") {
 			throw new Error(code.Err);
 		}
@@ -717,6 +720,17 @@
 	}
 	init(rawData);
 	data = observe(rawData);
+	if (data.localConfig.userToken && data.localConfig.username) {
+		if (doLogin(true)) {
+			data.userCtx.login = true;
+			data.userCtx.username = data.localConfig.username;
+			data.userCtx.token = data.localConfig.userToken;
+		} else {
+			data.userCtx.login = false;
+			data.userCtx.username = "";
+			data.userCtx.token = "";
+		}
+	}
 	refreshDom();
 </script>
 </html>
