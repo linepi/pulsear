@@ -124,13 +124,16 @@ pub fn load_user_config(req: &LoginRequest) -> UserConfig {
 
 pub fn store_user_config(req: &LogoutRequest) {}
 
-struct SqlHandler;
+/// should only be used by one thread
+struct SqlHandler {
+	dbpool: mysql::Pool
+}
 impl SqlHandler {
 	/// prerequisity: user_config table created
 	/// returned users: with all field filled
-	fn get_users(dbpool: &mysql::Pool)
+	fn get_users(&self)
 		-> Result<Vec<User>, Box<dyn std::error::Error>> {
-        let mut dbconn = dbpool.get_conn()?;
+        let mut dbconn = self.dbpool.get_conn()?;
 		let mut users: Vec<User> = vec![];
         dbconn.query_map(
 			r"SELECT user.id, username, token, theme, user_config.id 
@@ -153,9 +156,9 @@ impl SqlHandler {
 
 	/// prerequisity: user_config table created
 	/// returned user: with all field filled
-    fn get_user_by_name(dbpool: &mysql::Pool, username: &String) 
+    fn get_user_by_name(&self, username: &String) 
 		-> Result<Option<User>, Box<dyn std::error::Error>> {
-        let mut dbconn = dbpool.get_conn()?;
+        let mut dbconn = self.dbpool.get_conn()?;
         let stmt = dbconn.prep(
 			r"SELECT user.id, username, token, theme, user_config.id 
 			  from user, user_config 
@@ -183,14 +186,14 @@ impl SqlHandler {
 
 	/// user: username, token, config
 	/// returned user: id, ..., config_id
-	fn add_user(dbpool: &mysql::Pool, user: &User) 
+	fn add_user(&self, user: &User) 
 		-> Result<Option<User>, Box<dyn std::error::Error>> {
-		match SqlHandler::get_user_by_name(dbpool, &user.username)? {
+		match self.get_user_by_name(&user.username)? {
 			Some(u) => return Err(Box::from(format!("user exists: {:?}", u))),
 			None => ()
 		}
 
-        let mut dbconn = dbpool.start_transaction(TxOpts::default())?;
+        let mut dbconn = self.dbpool.start_transaction(TxOpts::default())?;
         let stmt = dbconn.prep(
 			r"INSERT INTO user(username, token)
 			  VALUES (:username, :token)")?;
@@ -204,17 +207,17 @@ impl SqlHandler {
 			  VALUES (:user_id, :theme)")?;
         dbconn.exec_drop(&stmt, params! { "user_id" => &user_id, "theme" => &user.config.theme })?;
 		dbconn.commit()?;
-		SqlHandler::get_user_by_name(dbpool, &user.username)
+		self.get_user_by_name(&user.username)
     }
 
-	fn delete_user_by_name(dbpool: &mysql::Pool, username: &String) 
+	fn delete_user_by_name(&self, username: &String) 
 		-> Result<(), Box<dyn std::error::Error>> {
-		match SqlHandler::get_user_by_name(dbpool, username)? {
+		match self.get_user_by_name(username)? {
 			Some(u) => log::info!("delete user[{:?}]", u),
 			None => return Err(Box::from(format!("user does not exist: {}", username)))
 		}
 
-        let mut dbconn = dbpool.start_transaction(TxOpts::default())?;
+        let mut dbconn = self.dbpool.start_transaction(TxOpts::default())?;
 		dbconn.exec_drop(
 			r"DELETE FROM user_config 
 			  WHERE user_id = (
@@ -229,13 +232,13 @@ impl SqlHandler {
 	}
 
 	fn update_user_config_by_name(
-		dbpool: &mysql::Pool, username: &String, config: &UserConfig)
+		&self, username: &String, config: &UserConfig)
 		-> Result<(), Box<dyn std::error::Error>> {
-		match SqlHandler::get_user_by_name(dbpool, username)? {
+		match self.get_user_by_name(username)? {
 			Some(u) => log::info!("update user[{:?}]'s config as {:?}", u, config),
 			None => return Err(Box::from(format!("user does not exist: {}", username)))
 		}
-        let mut dbconn = dbpool.get_conn()?;
+        let mut dbconn = self.dbpool.get_conn()?;
 		dbconn.exec_drop(
 			r"UPDATE user_config SET theme=?
 			  WHERE user_id = (
@@ -273,6 +276,9 @@ pub async fn resources(path: web::Path<String>) -> HttpResponse {
 #[post("/login")]
 pub async fn login(param: web::Json<LoginRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
     log::info!("user try login: {}", serde_json::to_string(&param).unwrap());
+	let sqlhandler = SqlHandler {
+		dbpool: data.dbpool.clone()
+	};
 
     let username = param.login_info.username.clone();
     let login_response: LoginResponse;
@@ -448,14 +454,16 @@ mod tests {
     #[test]
     fn sqlhandler() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(url) = std::env::var("PULSEAR_DATABASE_URL") {
-            let dbpool = mysql::Pool::new(url.as_str())?;
+            let handler = SqlHandler {
+				dbpool: mysql::Pool::new(url.as_str())?
+			};
 			let name = String::from("userggh0");
-			SqlHandler::delete_user_by_name(&dbpool, &name).unwrap_or(());
-			assert!(SqlHandler::get_user_by_name(&dbpool, &name)?.is_none());
+			handler.delete_user_by_name(&name).unwrap_or(());
+			assert!(handler.get_user_by_name(&name)?.is_none());
 
 			let token = String::from("token0");
 			let theme = String::from("dark");
-			SqlHandler::add_user(&dbpool, &User {
+			handler.add_user(&User {
 				id: 0,
 				username: name.clone(),
 				token: token.clone(),
@@ -464,28 +472,28 @@ mod tests {
 					theme: theme.clone()
 				}
 			})?.unwrap();
-			assert!(SqlHandler::get_user_by_name(&dbpool, &name)?.is_some());
+			assert!(handler.get_user_by_name(&name)?.is_some());
 
-			let user = SqlHandler::get_user_by_name(&dbpool, &name)?.unwrap();
+			let user = handler.get_user_by_name(&name)?.unwrap();
 			assert_eq!(&name, &user.username);
 			assert_eq!(&token, &user.token);
 			assert_eq!(&theme, &user.config.theme);
 
-			SqlHandler::update_user_config_by_name(&dbpool, &name, &UserConfig {
+			handler.update_user_config_by_name(&name, &UserConfig {
 				id: 0,
 				theme: String::from("light")
 			})?;
-			let user0 = SqlHandler::get_user_by_name(&dbpool, &name)?.unwrap();
+			let user0 = handler.get_user_by_name(&name)?.unwrap();
 			assert_eq!(&name, &user0.username);
 			assert_eq!(&token, &user0.token);
 			assert_eq!("light", &user0.config.theme);
 
 			let name1 = String::from("userggh1");
-			SqlHandler::delete_user_by_name(&dbpool, &name1).unwrap_or(());
-			assert!(SqlHandler::get_user_by_name(&dbpool, &name1)?.is_none());
+			handler.delete_user_by_name(&name1).unwrap_or(());
+			assert!(handler.get_user_by_name(&name1)?.is_none());
 			let token = String::from("token1");
 			let theme = String::from("dark");
-			let user1 = SqlHandler::add_user(&dbpool, &User {
+			let user1 = handler.add_user(&User {
 				id: 0,
 				username: name1.clone(),
 				token: token.clone(),
@@ -494,19 +502,19 @@ mod tests {
 					theme: theme.clone()
 				}
 			})?.unwrap();
-			assert!(SqlHandler::get_user_by_name(&dbpool, &name1)?.is_some());
+			assert!(handler.get_user_by_name(&name1)?.is_some());
 
-			assert_eq!(SqlHandler::get_users(&dbpool)?.iter().filter(|u| {
+			assert_eq!(handler.get_users()?.iter().filter(|u| {
 				*u == &user0 || *u == &user1
 			}).count(), 2);
 
-			SqlHandler::delete_user_by_name(&dbpool, &name1)?;
-			assert_eq!(SqlHandler::get_users(&dbpool)?.iter().filter(|u| {
+			handler.delete_user_by_name(&name1)?;
+			assert_eq!(handler.get_users()?.iter().filter(|u| {
 				*u == &user0 || *u == &user1
 			}).count(), 1);
 
-			SqlHandler::delete_user_by_name(&dbpool, &name)?;
-			assert_eq!(SqlHandler::get_users(&dbpool)?.iter().filter(|u| {
+			handler.delete_user_by_name(&name)?;
+			assert_eq!(handler.get_users()?.iter().filter(|u| {
 				*u == &user0 || *u == &user1
 			}).count(), 0);
         } else {
