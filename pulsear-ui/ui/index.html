@@ -342,7 +342,7 @@
 	<!-- 弹窗的容器 -->
 	<div class="popup" v-show="data.loginWindow" v-show-bind="onPopLoginWindow">
 		<div class="popup-content">
-			<span class="close-btn" @click="data.loginWindow=false">&times;</span>
+			<span class="close-btn" @click="data.loginWindow=false; data.loginCtx.alertMessage=false">&times;</span>
 			<h2>Login & SignUp</h2> 
 			<div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
 			<input type="text" v-model="data.loginCtx.usernameInput" 
@@ -488,7 +488,7 @@
 		el.focus(); 
 	}
 
-	function doLogin() {
+	function doLogin(isInit) {
 		if (data.loginCtx.usernameInput.length < 4 ||
 			data.loginCtx.usernameInput.length > 16) {
 			data.loginCtx.alertMessage = "username length not valid";
@@ -501,22 +501,28 @@
 			console.log(data.loginCtx.alertMessage)
 			return;
 		}
+		let loginRequest = {
+			basic_info: {
+				time_stamp: Date.now()
+			},
+			login_info: {
+				choice: {}
+			}
+		}
+		if (isInit) {
+			loginRequest.login_info.username = data.localConfig.username;
+			loginRequest.login_info.choice.Token = data.localConfig.userToken;
+		} else {
+			loginRequest.login_info.username = data.loginCtx.usernameInput;
+			loginRequest.login_info.choice.Password = data.loginCtx.passwordInput;
+		}
+		let ret = true;
 		fetch(data.api.login, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json; charset=UTF-8'
 			},
-			body: JSON.stringify({
-				basic_info: {
-					time_stamp: Date.now()
-				},
-				login_info: {
-					username: data.loginCtx.usernameInput,
-					choice: {
-						Password: data.loginCtx.passwordInput
-					}
-				}
-			})
+			body: JSON.stringify()
 		}).then(response => {
 			if (!response.ok) {
 				console.error("login bad response:", response);
@@ -530,7 +536,9 @@
 		}).catch(error => {
 			data.loginCtx.alertMessage = "inner error:" + error
 			console.error(data.loginCtx.alertMessage)
+			ret = false;
 		})
+		return ret;
 	}
 
 	function doLogout() {
@@ -630,9 +638,11 @@
 		});
 		loadLocalConfig(rawData);
 		if (rawData.localConfig.userToken && rawData.localConfig.username) {
-			rawData.userCtx.login = true;
-			rawData.userCtx.username = rawData.localConfig.username;
-			rawData.userCtx.token = rawData.localConfig.userToken;
+			if (doLogin(true)) {
+				rawData.userCtx.login = true;
+				rawData.userCtx.username = rawData.localConfig.username;
+				rawData.userCtx.token = rawData.localConfig.userToken;
+			}
 		}
 		walkDom(document.documentElement, doRegisterListeners)
 	}
