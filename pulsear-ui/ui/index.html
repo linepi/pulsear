@@ -310,6 +310,19 @@
 		text-decoration: none;
 		color: var(--text-color);
 	}
+
+	.upload-button {
+		padding: 10px 20px;
+		background-color: #3498db;
+		color: white;
+		border: none;
+		border-radius: 5px;
+		cursor: pointer;
+	}
+
+	.upload-button:hover {
+		background-color: #2980b9;
+	}
 	</style>
 </head>
 <body>
@@ -364,6 +377,8 @@
 	</div>
 
 	<main>
+		<!-- hidden upload button -->
+		<input id="file_input" type="file" style="display: none;"/>
 		<section v-if="data.tab === 'dashboard'">
 			<h1>Dashboard</h1>
 			<div class="card-container">
@@ -394,6 +409,14 @@
 	</main>
 </body>
 <script>
+	function uploadFile() {
+
+	}
+
+	function downloadFile() {
+
+	}
+
 	function observe(data) {
 		if (typeof data !== 'object' || data === null) {
 			return data;
@@ -547,7 +570,7 @@
 			return response.json();
 		}).then(json => {
 			console.log('get login response: ', json);
-			onLogin(json);
+			onLogin(json, isInit);
 		}).catch(error => {
 			data.loginCtx.alertMessage = "inner error:" + error
 			console.error(data.loginCtx.alertMessage)
@@ -561,11 +584,8 @@
 			basic_info: {
 				time_stamp: Date.now()
 			},
-			user_ctx: {
-				username: data.userCtx.username,
-				token: data.userCtx.token,
-				state: "Conn"
-			},
+      username: data.userCtx.username,
+      token: data.userCtx.token,
 			config: {
 				id: 0,
 				theme: data.localConfig.theme
@@ -616,16 +636,57 @@
 		}
 	}
 
-	function onLogin(response) {
+  function wssend(msg) {
+    console.log("ws send: ", msg);
+    data.ws.socket.send(msg);
+  }
+
+  function registerWs() {
+    const { location } = window;
+
+    const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
+    const wsUri = `${proto}://${location.host}/ws`;
+
+    data.ws.socket = new WebSocket(wsUri);
+
+    data.ws.socket.onopen = evt => {
+      console.log('Ws connected');
+      wssend(data.ws.establish_prefix + ':' + data.userCtx.username);
+    }
+
+    data.ws.socket.onmessage = evt => {
+      console.log('Ws received: ' + evt.data);
+    }
+
+    data.ws.socket.onclose = evt => {
+      console.log('Ws disconnected');
+      data.ws.socket = null;
+    }
+
+    data.ws.socket.onerror = evt => {
+      console.log("Ws error: ", evt);
+      data.ws.socket = null;
+    }
+  }
+
+	function onLogin(response, isInit) {
 		onResponseCode(response.code);
-		data.userCtx.login = true
-		data.userCtx.username = response.user_ctx.username;
-		data.userCtx.token = response.user_ctx.token;
-		data.localConfig.userToken = data.userCtx.token;
-		data.localConfig.username = data.userCtx.username;
+    // login success
+		data.localConfig.userToken = response.token;
 		data.localConfig.theme = response.config.theme;
+		data.userCtx.login = true
+		data.userCtx.token = response.token;
+
+    if (isInit) {
+      data.userCtx.username = data.localConfig.username;
+    } else {
+      data.localConfig.username = data.loginCtx.usernameInput;
+      data.userCtx.username = data.loginCtx.usernameInput;
+    }
 		data.loginCtx.alertMessage = "";
 		data.loginWindow = false
+
+    registerWs();
 	}
 
 	function onLogout(response) {
@@ -635,6 +696,8 @@
 		data.userCtx.token = "";
 		data.localConfig.userToken = "";
 		data.localConfig.username = "";
+    
+    data.ws.socket.close();
 	}
 
 	function onUserProfile() {
@@ -702,6 +765,14 @@
 			theme: "dark",
 			userToken: "",
 			username: "",
+		},
+    ws: {
+      socket: null,
+      establish_prefix: 'vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds'
+    },
+		files: {
+			uploadText: "upload",
+			downloadText: "download",
 		}
 	}
 	let directives = {

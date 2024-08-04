@@ -1,0 +1,22 @@
+# Set the edition of the code to Rust 2018
+edition = "2018"
+
+# The maximum line length of the code.
+max_width = 100
+
+# Whether to use tab characters for indentation.
+use_small_heuristics = "Max"
+
+# The width at which to allow function-like macros to be written with vertical alignment.
+attr_fn_like_width = 70
+
+tab_spaces = 4
+
+# The style of match statement formatting.
+match_arm_leading_pipes = "Preserve"
+match_block_trailing_comma = true
+
+# The use of whitespace characters.
+reorder_imports = true
+reorder_modules = true
+remove_nested_parens = true

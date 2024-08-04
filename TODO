@@ -1,8 +1,15 @@
+efficient and development
 1. update user info periodly
 2. make a research into websocket and use it in the project
 3. make login-logout test high concurrent
 4. find a method to synchoronize js code(struct) and rust code(struct)
-5. implement heartbear
+5. implement heartbeat
 6. add more info to userCtx
 7. learn rust mod system, and split main.rs into resonablely multiple files.
-8. 
+
+feature and functions
+1. support upload and download one single file simutaniously
+2. user can share his files with other users
+3. user can send a file to as url(like baiduyunpan), and may need password to access
+4. maximize the upload and download speed
+5. 
