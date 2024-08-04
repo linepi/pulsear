@@ -323,8 +323,14 @@
 				</div>
 				<ul class="nav-links">
 					<li><a href="#" @click="data.tab='home'">Home</a></li>
-					<li><a href="#" @click="data.tab='dashboard'">Dashboard</a></li>
-					<li><a href="#" @click="data.tab='files'">Files</a></li>
+					<li><a href="#" @click="
+						if (data.userCtx.login) data.tab='dashboard';
+						else data.loginWindow=true;
+						">Dashboard</a></li>
+					<li><a href="#" @click="
+						if (data.userCtx.login) data.tab='files';
+						else data.loginWindow=true;
+						">Files</a></li>
 					<li v-if="!data.userCtx.login">
 						<a href="#" @click="data.loginWindow=true">Sign In</a>
 					</li>
