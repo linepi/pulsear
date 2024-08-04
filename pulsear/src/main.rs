@@ -7,7 +7,6 @@ use mysql::prelude::*;
 use mysql::TxOpts;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
@@ -119,7 +118,7 @@ pub struct UserCtx {
     token: String,
     user_agent: String,
     establish_t: Time,
-    session: Option<Recipient<Message>>,
+    session: Option<actix::Addr<WsSession>>,
 }
 
 impl PartialEq for UserCtx {
@@ -161,10 +160,9 @@ impl Time {
 
 impl fmt::Display for Time {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use chrono::offset::Utc;
         use chrono::DateTime;
-        let datetime: DateTime<Utc> = self.0.into();
-        write!(f, "{}", datetime.format("%d/%m/%Y %T"))
+        let datetime: DateTime<chrono::Local> = self.0.into();
+        write!(f, "{}", datetime.to_rfc2822())
     }
 }
 
@@ -422,7 +420,7 @@ pub async fn login(param: web::Json<LoginRequest>, data: web::Data<Arc<Server>>)
             resp = HttpResponse::Ok().json(response)
         },
     }
-    log::info!("Server resp with {:?}", resp);
+    log::debug!("Server login resp with {:?}", resp);
     resp
 }
 
@@ -463,7 +461,7 @@ pub async fn logout(param: web::Json<LogoutRequest>, data: web::Data<Arc<Server>
             resp = HttpResponse::Ok().json(response)
         },
     }
-    log::info!("Server resp with {:?}", resp);
+    log::debug!("Server logout resp with {:?}", resp);
     resp
 }
 
@@ -517,22 +515,6 @@ impl actix::Actor for WsSession {
     }
 }
 
-impl WsSession {
-    fn broadcast(&self, msg: String) {
-        let user_ctxs = self.server.user_ctxs.read().unwrap();
-        for pair in user_ctxs.iter() {
-            let ctx_vec = pair.1;
-            for user_ctx in ctx_vec.iter() {
-                if *user_ctx != self.user_ctx {
-                    let session = user_ctx.session.clone().unwrap();
-                    let _ = session.send(Message(msg.clone()));
-                    log::info!("broadcast send {} to {}", msg, user_ctx);
-                }
-            }
-        }
-    }
-}
-
 impl Handler<Message> for WsSession {
     type Result = ();
 
@@ -541,9 +523,28 @@ impl Handler<Message> for WsSession {
     }
 }
 
+impl WsSession {
+    // use user_ctxs read lock
+    fn broadcast(&self, msg: String) {
+        let user_ctxs;
+        // avoid network time let lock consume too much, clone one
+        {
+            user_ctxs = self.server.user_ctxs.read().unwrap().clone();
+        }
+        for pair in user_ctxs.iter() {
+            let ctx_vec = pair.1;
+            for user_ctx in ctx_vec.iter() {
+                if *user_ctx != self.user_ctx {
+                    let addr = user_ctx.session.clone().unwrap();
+                    let _ = addr.do_send(Message(msg.clone()));
+                }
+            }
+        }
+    }
+}
+
 impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        log::debug!("ws: {:?}", msg);
         let msg = match msg {
             Err(e) => {
                 log::error!("ws msg is Err: {}", e);
@@ -554,6 +555,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb_t = Time::now();
+                log::debug!("ws: {:?}", msg);
                 ctx.pong(&msg);
             },
             ws::Message::Pong(_) => {
@@ -561,6 +563,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
             },
             ws::Message::Text(text) => {
                 // new client connected
+                log::info!("ws receive text: {}", text);
                 if text.contains("vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds") {
                     let two: Vec<&str> = text.split(":").collect();
                     let username = two[1].to_string();
@@ -576,7 +579,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                         let mut user_ctxs = self.server.user_ctxs.write().unwrap();
                         self.user_ctx.token = token.clone();
                         self.user_ctx.username = username.clone();
-                        self.user_ctx.session = Some(ctx.address().recipient());
+                        self.user_ctx.session = Some(ctx.address());
                         log::info!(
                             "add new user_ctx: {}",
                             self.user_ctx
@@ -597,12 +600,13 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                     ctx.text(text);
                 }
             },
-            ws::Message::Binary(bin) => {},
+            ws::Message::Binary(_) => {},
             ws::Message::Close(reason) => {
+                log::info!("ws receive close: {:?}", reason);
                 ctx.close(reason);
                 ctx.stop();
             },
-            ws::Message::Continuation(conti) => {
+            ws::Message::Continuation(_) => {
                 ctx.stop();
             },
             ws::Message::Nop => {},
