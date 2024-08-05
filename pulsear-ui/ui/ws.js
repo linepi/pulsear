@@ -20,8 +20,24 @@ class WsClient {
     return { username: pclone(this.#name) }
   }
 
+  static fromObj(obj) {
+    return new WsClient(obj.username);
+  }
+
+  static fromJson(json) {
+    const obj = JSON.parse(json);
+    return new WsClient(obj.username);
+  }
+
   toJson() {
     return JSON.stringify(this.asObj());
+  }
+
+  equals(other) {
+    if (!(other instanceof WsClient)) {
+      throw new Error("compare only work in same type");
+    }
+    return this.toJson() === other.toJson();
   }
 }
 
@@ -35,11 +51,11 @@ class WsSender {
     return new WsSender(2, new WsClient(name).asObj());
   }
   #value;
-  #name;
+  #wsclient;
 
-  constructor(val, name) {
+  constructor(val, wsclient) {
     this.#value = val;
-    this.#name = name;
+    this.#wsclient = wsclient;
   }
 
   asObj() {
@@ -49,10 +65,10 @@ class WsSender {
         out_obj = "Server";
         break;
       case 1:
-        out_obj = { User: pclone(this.#name) };
+        out_obj = { User: pclone(this.#wsclient) };
         break;
       case 2:
-        out_obj = { Manager: pclone(this.#name) };
+        out_obj = { Manager: pclone(this.#wsclient) };
         break;
       default:
         throw new Error("unexpected");
@@ -60,8 +76,32 @@ class WsSender {
     return out_obj;
   }
 
+  static fromObj(obj) {
+    if (obj === "Server") {
+      return WsSender.Server;
+    } else if (obj.User && typeof obj.User.username === "string") {
+      return WsSender.User(obj.User.username);
+    } else if (obj.Manager && typeof obj.Manager.username === "string") {
+      return WsSender.Manager(obj.Manager.username);
+    } else {
+      throw new Error("Invalid object for WsSender");
+    }
+  }
+
+  static fromJson(json) {
+    const obj = JSON.parse(json);
+    return this.fromObj(obj);
+  }
+
   toJson() {
     return JSON.stringify(this.asObj());
+  }
+
+  equals(other) {
+    if (!(other instanceof WsSender)) {
+      throw new Error("compare only work in same type");
+    }
+    return this.toJson() === other.toJson();
   }
 }
 
@@ -73,7 +113,7 @@ class WsDispatchType {
     if (!Array.isArray(username_list)) {
       throw new Error("users should be array");
     }
-    new WsDispatchType(3, username_list)
+    return new WsDispatchType(3, username_list);
   }
   #value
   #ws_client_list
@@ -111,21 +151,51 @@ class WsDispatchType {
     return out_obj;
   }
 
+  static fromObj(obj) {
+    if (obj === "Unknown") {
+      return WsDispatchType.Unknown;
+    } else if (obj === "Broadcast") {
+      return WsDispatchType.Broadcast;
+    } else if (obj === "Server") {
+      return WsDispatchType.Server;
+    } else if (typeof obj === "object" && obj !== null && obj.Users) {
+      let username_list = [];
+      obj.Users.forEach(ws_client => {
+        username_list.push(ws_client.username);
+      });
+      return WsDispatchType.Users(username_list);
+    } else {
+      throw new Error("Invalid object for WsDispatchType");
+    }
+  }
+
+  static fromJson(json) {
+    const obj = JSON.parse(json);
+    return this.fromObj(obj);
+  }
+
   toJson() {
     return JSON.stringify(this.asObj());
+  }
+
+  equals(other) {
+    if (!(other instanceof WsDispatchType)) {
+      throw new Error("compare only work in same type");
+    }
+    return this.toJson() === other.toJson();
   }
 }
 
 class WsMessageClass {
   static Establish = new WsMessageClass(0, null);
   static File = file => {
-    new WsMessageClass(1, file);
+    return new WsMessageClass(1, file);
   };
   static Text = text => {
-    new WsMessageClass(2, text);
+    return new WsMessageClass(2, text);
   };
   static Errjson = msg => {
-    new WsDispatchType(3, msg)
+    return new WsDispatchType(3, msg)
   };
   #value
   #content
@@ -156,8 +226,34 @@ class WsMessageClass {
     return out_obj;
   }
 
+  static fromJson(json) {
+    const obj = JSON.parse(json);
+    return this.fromObj(obj);
+  }
+
+  static fromObj(obj) {
+    if (obj === "Establish") {
+      return WsMessageClass.Establish;
+    } else if (typeof obj === 'object' && obj !== null && obj.File) {
+      return WsMessageClass.File(obj.File);
+    } else if (typeof obj === 'object' && obj !== null && obj.Text) {
+      return WsMessageClass.Text(obj.Text);
+    } else if (typeof obj === 'object' && obj !== null && obj.Errjson) {
+      return WsMessageClass.Errjson(obj.Errjson);
+    } else {
+      throw new Error("Invalid object for WsMessageClass");
+    }
+  }
+
   toJson() {
     return JSON.stringify(this.asObj());
+  }
+
+  equals(other) {
+    if (!(other instanceof WsMessageClass)) {
+      throw new Error("compare only work in same type");
+    }
+    return this.toJson() === other.toJson();
   }
 }
 
@@ -188,9 +284,28 @@ class WsMessage {
     };
   }
 
+  static fromJson(json) {
+    const obj = JSON.parse(json);
+    return this.fromObj(obj);
+  }
+
+  static fromObj(obj) {
+    const sender = WsSender.fromObj(obj.sender);
+    const msg = WsMessageClass.fromObj(obj.msg);
+    const policy = WsDispatchType.fromObj(obj.policy);
+    return new WsMessage(sender, msg, policy);
+  }
+
   // to json string for send
   toJson() {
     return JSON.stringify(this.asObj());
+  }
+
+  equals(other) {
+    if (!(other instanceof WsMessage)) {
+      throw new Error("compare only work in same type");
+    }
+    return this.toJson() === other.toJson();
   }
 }
 

@@ -140,7 +140,7 @@ impl fmt::Display for UserCtx {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 struct Time(SystemTime);
 impl Time {
     pub fn now() -> Self {
@@ -153,8 +153,20 @@ impl Time {
         since_the_epoch.as_millis() as u64
     }
 
+    pub fn nano(&self) -> u64 {
+        let since_the_epoch =
+            self.0.duration_since(std::time::UNIX_EPOCH).expect("Time went backwards");
+        since_the_epoch.as_nanos() as u64
+    }
+
     pub fn system_time(&self) -> SystemTime {
         self.0
+    }
+}
+
+impl PartialEq for Time {
+    fn eq(&self, other: &Self) -> bool {
+        self.nano() == other.nano()
     }
 }
 
@@ -334,7 +346,7 @@ impl SqlHandler {
     }
 }
 
-pub async fn index(data: web::Data<Arc<Server>>) -> HttpResponse {
+pub async fn index() -> HttpResponse {
     let html_str = match std::fs::read_to_string("pulsear-ui/ui/index.html") {
         Ok(s) => s,
         Err(e) => {
@@ -550,6 +562,8 @@ impl Handler<WsMessage> for WsSession {
     type Result = ();
 
     fn handle(&mut self, ws_message: WsMessage, ctx: &mut Self::Context) {
+        log::info!("handle wsmessage {}", 
+            serde_json::to_string(&ws_message).expect("ws message must be deserializable"));
         match ws_message.msg {
             WsMessageClass::Establish => {
                 let username = match ws_message.sender {

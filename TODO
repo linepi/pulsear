@@ -1,11 +1,7 @@
 efficient and development
 1. update user info periodly
-2. make a research into websocket and use it in the project(done)
-3. make login-logout test high concurrent
-4. find a method to synchoronize js code(struct) and rust code(struct)
-5. implement heartbeat(done)
-6. add more info to userCtx(done)
-7. learn rust mod system, and split main.rs into resonablely multiple files.
+2. make login-logout test high concurrent
+3. learn rust mod system, and split main.rs into resonablely multiple files.
 
 feature and functions
 1. support upload and download one single file simutaniously
