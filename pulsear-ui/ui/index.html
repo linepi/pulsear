@@ -671,22 +671,22 @@
 
 	function onLogin(response, isInit) {
 		onResponseCode(response.code);
-    // login success
+		// login success
 		data.localConfig.userToken = response.token;
 		data.localConfig.theme = response.config.theme;
 		data.userCtx.login = true
 		data.userCtx.token = response.token;
 
-    if (isInit) {
+		if (isInit) {
       data.userCtx.username = data.localConfig.username;
-    } else {
+		} else {
       data.localConfig.username = data.loginCtx.usernameInput;
       data.userCtx.username = data.loginCtx.usernameInput;
-    }
+		}
 		data.loginCtx.alertMessage = "";
 		data.loginWindow = false
 
-    registerWs();
+		registerWs();
 	}
 
 	function onLogout(response) {
@@ -738,7 +738,7 @@
 	}
 
 	let root = document;
-	let prefix_ = 'giocdanewla';
+	let prefix_ = window.location.origin + '/';
 	let rawData = {
 		prefix: prefix_,
 		resources_prefix: prefix_ + 'resources/',
@@ -766,10 +766,10 @@
 			userToken: "",
 			username: "",
 		},
-    ws: {
-      socket: null,
-      establish_prefix: 'vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds'
-    },
+		ws: {
+			socket: null,
+			establish_prefix: 'vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds'
+		},
 		files: {
 			uploadText: "upload",
 			downloadText: "download",
@@ -802,11 +802,7 @@
 	init(rawData);
 	data = observe(rawData);
 	if (data.localConfig.userToken && data.localConfig.username) {
-		if (doLogin(true)) {
-			data.userCtx.login = true;
-			data.userCtx.username = data.localConfig.username;
-			data.userCtx.token = data.localConfig.userToken;
-		} else {
+		if (!doLogin(true)) {
 			data.userCtx.login = false;
 			data.userCtx.username = "";
 			data.userCtx.token = "";

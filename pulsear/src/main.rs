@@ -335,8 +335,7 @@ impl SqlHandler {
 }
 
 pub async fn index(data: web::Data<Arc<Server>>) -> HttpResponse {
-    // like 192.168.31.126:4444
-    let mut html_str = match std::fs::read_to_string("pulsear-ui/ui/index.html") {
+    let html_str = match std::fs::read_to_string("pulsear-ui/ui/index.html") {
         Ok(s) => s,
         Err(e) => {
             let errmsg = format!("error: {} of index.html", e);
@@ -344,11 +343,6 @@ pub async fn index(data: web::Data<Arc<Server>>) -> HttpResponse {
             return HttpResponse::InternalServerError().body(errmsg);
         },
     };
-    // replace the ipaddr in html_str to actual one
-    html_str = html_str.replace(
-        "giocdanewla",
-        format!("https://{}/", data.config.read().unwrap().outer_addr).as_str(),
-    );
     HttpResponse::Ok().body(html_str)
 }
 
@@ -641,7 +635,6 @@ pub async fn ws(
 pub struct ServerConfig {
     pub loglevel: String,
     pub cwd: String,
-    pub outer_addr: String,
     pub inner_addr: String,
     pub worker_num: i32,
     pub https: bool,
@@ -991,7 +984,6 @@ mod tests {
             let server_config = ServerConfig {
                 loglevel: loglevel.clone(),
                 cwd: String::from("/home/wu/repository/pulsear"),
-                outer_addr: addr.clone(),
                 inner_addr: addr.clone(),
                 worker_num: 4,
                 https: false,
