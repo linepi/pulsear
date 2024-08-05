@@ -548,10 +548,7 @@ impl actix::Actor for WsSession {
 
     fn stopped(&mut self, _: &mut Self::Context) {
         if self.server.r_is_manager(&self.user_ctx.username) {
-            self.broadcast(format!(
-                "{} leave the site at {}",
-                &self.user_ctx.username, Time::now()
-            ));
+            self.broadcast("leave the site".into());
         }
         assert!(self.server.w_remove_user_ctx(&self.user_ctx), "should have user_ctx");
         log::info!("actor stopped");
@@ -590,7 +587,7 @@ impl Handler<WsMessage> for WsSession {
                 self.server.w_add_user_ctx(&self.user_ctx);
                 // manager login will broadcast to all clients
                 if self.server.r_is_manager(&username) {
-                    self.broadcast(format!("Enter the site!"));
+                    self.broadcast("Enter the site!".into());
                 }
             },
             WsMessageClass::File(_) => {

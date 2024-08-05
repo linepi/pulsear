@@ -424,7 +424,7 @@ function onBroadCast(ws_message) {
   let sender = "";
   let important = false;
   if (ws_message.sender.is(WsSender.Server)) {
-    sender = "Server";
+    sender = "Pulsear";
     important = true;
   } else if (ws_message.sender.is(WsSender.User)) {
     sender = ws_message.sender.wsclient.username;
@@ -435,7 +435,7 @@ function onBroadCast(ws_message) {
   let msg = ws_message.msg.content;
 
   let notification_container = document.getElementsByClassName('notification-container')[0];
-  let newNode = document.createElement("div");
+  let newNode = document.createElement("div"); // anything is ok, it's only a tag
   if (important) {
     newNode.className = 'notification-important';
   } else {

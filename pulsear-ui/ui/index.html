@@ -444,7 +444,6 @@
 
 	<main>
 		<!-- hidden upload button -->
-		<input id="file_input" type="file" style="display: none;"/>
 		<section v-if="data.tab === 'dashboard'">
 			<h1>Dashboard</h1>
 			<div class="card-container">
@@ -473,8 +472,8 @@
 			<h1>Files</h1>
 		</section>
 
-    <div class="notification-container" v-show="data.localConfig.notify">
-    </div>
+    <div class="notification-container" v-show="data.localConfig.notify"></div>
+    <input id="input_file" type="file" v-show="true">
 	</main>
 </body>
 <script>
@@ -852,5 +851,11 @@
       }
     }
   };
+</script>
+<script>
+  const nameInput = document.getElementById("input_file");
+  nameInput.addEventListener("input", () => {
+    console.log('input clicked');
+  });
 </script>
 </html>
