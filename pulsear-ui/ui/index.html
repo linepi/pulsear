@@ -324,6 +324,7 @@
 		background-color: #2980b9;
 	}
 	</style>
+  <script v-src="data.resources_prefix + 'ws.js'"></script>
 </head>
 <body>
 	<header>
@@ -564,7 +565,7 @@
 		}).then(response => {
 			if (!response.ok) {
 				console.error("login bad response:", response);
-				data.loginCtx.alertMessage = "server response:" + response.statusText
+				data.loginCtx.alertMessage = "server response:" + response.statusText;
 				throw new Error(data.loginCtx.alertMessage);
 			}
 			return response.json();
@@ -572,8 +573,8 @@
 			console.log('get login response: ', json);
 			onLogin(json, isInit);
 		}).catch(error => {
-			data.loginCtx.alertMessage = "inner error:" + error
-			console.error(data.loginCtx.alertMessage)
+			data.loginCtx.alertMessage = error;
+			console.error(data.loginCtx.alertMessage);
 			ret = false;
 		})
 		return ret;
@@ -635,39 +636,6 @@
 			rawData.localConfig.username = localConfig.username;
 		}
 	}
-
-  function wssend(msg) {
-    console.log("ws send: ", msg);
-    data.ws.socket.send(msg);
-  }
-
-  function registerWs() {
-    const { location } = window;
-
-    const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
-    const wsUri = `${proto}://${location.host}/ws`;
-
-    data.ws.socket = new WebSocket(wsUri);
-
-    data.ws.socket.onopen = evt => {
-      console.log('Ws connected');
-      wssend(data.ws.establish_prefix + ':' + data.userCtx.username);
-    }
-
-    data.ws.socket.onmessage = evt => {
-      console.log('Ws received: ' + evt.data);
-    }
-
-    data.ws.socket.onclose = evt => {
-      console.log('Ws disconnected');
-      data.ws.socket = null;
-    }
-
-    data.ws.socket.onerror = evt => {
-      console.log("Ws error: ", evt);
-      data.ws.socket = null;
-    }
-  }
 
 	function onLogin(response, isInit) {
 		onResponseCode(response.code);
@@ -768,7 +736,6 @@
 		},
 		ws: {
 			socket: null,
-			establish_prefix: 'vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds'
 		},
 		files: {
 			uploadText: "upload",
@@ -788,6 +755,9 @@
 		'v-href': (el, expr) => {
 			el.href = eval(expr);
 		},
+		'v-src': (el, expr) => {
+			el.src = eval(expr);
+		},
 		'v-if': vIfImpl,
 	}
 	let onceDirectives = {
@@ -799,15 +769,19 @@
 			}
 		},
 	}
-	init(rawData);
-	data = observe(rawData);
-	if (data.localConfig.userToken && data.localConfig.username) {
-		if (!doLogin(true)) {
-			data.userCtx.login = false;
-			data.userCtx.username = "";
-			data.userCtx.token = "";
-		}
-	}
-	refreshDom();
+
+  init(rawData);
+  data = observe(rawData);
+  refreshDom();
+
+  window.onload = function(event) { 
+    if (data.localConfig.userToken && data.localConfig.username) {
+      if (!doLogin(true)) {
+        data.userCtx.login = false;
+        data.userCtx.username = "";
+        data.userCtx.token = "";
+      }
+    }
+  };
 </script>
 </html>

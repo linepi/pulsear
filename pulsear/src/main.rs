@@ -459,6 +459,53 @@ pub async fn logout(param: web::Json<LogoutRequest>, data: web::Data<Arc<Server>
     resp
 }
 
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct WsClient {
+    username: String
+}
+
+impl WsClient {
+    fn new(usrname: &String) -> Self {
+        Self { username: usrname.clone() }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct WsDispatchTargets(Vec<WsClient>);
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum WsMessageClass {
+    Establish,
+    File(Vec<u8>),
+    Text(String),
+    Errjson(String),
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum WsDispatchType {
+    Unknown,
+    Broadcast,
+    Server,
+    Users(WsDispatchTargets),
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum WsSender {
+    Server,
+    User(WsClient),
+    Manager(WsClient)
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+#[derive(serde::Deserialize, serde::Serialize)]
+struct WsMessage {
+    sender: WsSender,
+    msg: WsMessageClass,
+    policy: WsDispatchType,
+}
+
 struct WsSession {
     server: Arc<Server>,
     hb_t: Time,
@@ -488,32 +535,60 @@ impl actix::Actor for WsSession {
     }
 
     fn stopped(&mut self, _: &mut Self::Context) {
-        self.broadcast(format!(
-            "{} leave the site at {}",
-            &self.user_ctx.username, self.user_ctx.establish_t
-        ));
-        let mut user_ctxs = self.server.user_ctxs.write().unwrap();
-        if let Some(ctx_vec) = user_ctxs.get_mut(&self.user_ctx.username) {
-            let mut target: Option<usize> = None;
-            for (i, ctx) in ctx_vec.iter().enumerate() {
-                if *ctx == self.user_ctx {
-                    assert_eq!(target, None);
-                    target = Some(i);
-                }
-            }
-            ctx_vec.remove(target.expect("should have the user_ctx"));
-        } else {
-            panic!("should have user_ctx");
+        if self.server.r_is_manager(&self.user_ctx.username) {
+            self.broadcast(format!(
+                "{} leave the site at {}",
+                &self.user_ctx.username, Time::now()
+            ));
         }
+        assert!(self.server.w_remove_user_ctx(&self.user_ctx), "should have user_ctx");
         log::info!("actor stopped");
     }
 }
 
-impl Handler<Message> for WsSession {
+impl Handler<WsMessage> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: Message, ctx: &mut Self::Context) {
-        ctx.text(msg.0);
+    fn handle(&mut self, ws_message: WsMessage, ctx: &mut Self::Context) {
+        match ws_message.msg {
+            WsMessageClass::Establish => {
+                let username = match ws_message.sender {
+                    WsSender::User(u) => u.username.clone(),
+                    _ => {
+                        log::error!("unexpected");
+                        return;
+                    }
+                };
+                let sqlhandler = SqlHandler { dbpool: self.server.dbpool.clone() };
+                let token = sqlhandler
+                    .get_user_by_name(&username)
+                    .expect("should has user")
+                    .expect("should has user")
+                    .token;
+
+                self.user_ctx.token = token.clone();
+                self.user_ctx.username = username.clone();
+                self.user_ctx.session = Some(ctx.address());
+                log::info!(
+                    "add new user_ctx: {}",
+                    self.user_ctx
+                );
+                self.server.w_add_user_ctx(&self.user_ctx);
+                // manager login will broadcast to all clients
+                if self.server.r_is_manager(&username) {
+                    self.broadcast(format!("{username} enter the site at {}!", Time::now()));
+                }
+            },
+            WsMessageClass::File(_) => {
+
+            },
+            WsMessageClass::Text(_) => {
+                ctx.text(serde_json::to_string(&ws_message).unwrap());
+            },
+            WsMessageClass::Errjson(e) => {
+                log::error!("unexpect msg: {e}");
+            }
+        }
     }
 }
 
@@ -530,7 +605,11 @@ impl WsSession {
             for user_ctx in ctx_vec.iter() {
                 if *user_ctx != self.user_ctx {
                     let addr = user_ctx.session.clone().unwrap();
-                    let _ = addr.do_send(Message(msg.clone()));
+                    let _ = addr.do_send(WsMessage {
+                        sender: WsSender::User(WsClient::new(&self.user_ctx.username)),
+                        msg: WsMessageClass::Text(msg.clone()),
+                        policy: WsDispatchType::Broadcast
+                    });
                 }
             }
         }
@@ -557,42 +636,20 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
             },
             ws::Message::Text(text) => {
                 // new client connected
-                log::info!("ws receive text: {}", text);
-                if text.contains("vdsavje9w0a90fjds9ckvkds0abjdak90kcd9s0avjds") {
-                    let two: Vec<&str> = text.split(":").collect();
-                    let username = two[1].to_string();
-
-                    let sqlhandler = SqlHandler { dbpool: self.server.dbpool.clone() };
-                    let token = sqlhandler
-                        .get_user_by_name(&username)
-                        .expect("should has user")
-                        .expect("should has user")
-                        .token;
-
-                    {
-                        let mut user_ctxs = self.server.user_ctxs.write().unwrap();
-                        self.user_ctx.token = token.clone();
-                        self.user_ctx.username = username.clone();
-                        self.user_ctx.session = Some(ctx.address());
-                        log::info!(
-                            "add new user_ctx: {}",
-                            self.user_ctx
-                        );
-                        if let Some(ctx_vec) = user_ctxs.get_mut(&username) {
-                            ctx_vec.push(self.user_ctx.clone());
-                        } else {
-                            assert!(user_ctxs
-                                .insert(username.clone(), vec![self.user_ctx.clone()])
-                                .is_none());
-                        }
+                log::info!("ws receive text from client: {}", text);
+                let ws_message: WsMessage = match serde_json::from_str(&text) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        ctx.text(serde_json::to_string(&WsMessage {
+                            sender: WsSender::Server,
+                            msg: WsMessageClass::Errjson(e.to_string()),
+                            policy: WsDispatchType::Unknown
+                        }).unwrap());
+                        return;
                     }
-                    self.broadcast(format!(
-                        "{} enter the site at {}",
-                        username, self.user_ctx.establish_t
-                    ));
-                } else {
-                    ctx.text(text);
-                }
+                };
+                // send Self for more function
+                ctx.address().do_send(ws_message);
             },
             ws::Message::Binary(_) => {},
             ws::Message::Close(reason) => {
@@ -638,17 +695,58 @@ pub struct ServerConfig {
     pub inner_addr: String,
     pub worker_num: i32,
     pub https: bool,
+    pub managers: Vec<String>
 }
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Message(pub String);
 
 pub struct Server {
     pub config: RwLock<ServerConfig>,
     // map username to a list of UserCtx
     pub user_ctxs: RwLock<HashMap<String, Vec<UserCtx>>>,
     pub dbpool: mysql::Pool,
+}
+
+impl Server {
+    fn r_config(&self) -> ServerConfig {
+        self.config.read().unwrap().clone()
+    }
+
+    fn r_is_manager(&self, username: &String) -> bool {
+        self.r_config().managers.contains(&username)
+    }
+
+    // add a user_ctx to server state, must not exist
+    fn w_add_user_ctx(&self, user_ctx: &UserCtx) {
+        let mut user_ctxs = self.user_ctxs.write().unwrap();
+        if let Some(ctx_vec) = user_ctxs.get_mut(&user_ctx.username) {
+            assert!(!ctx_vec.contains(user_ctx), "must not exist");
+            ctx_vec.push(user_ctx.clone());
+        } else {
+            assert!(user_ctxs
+                .insert(user_ctx.username.clone(), vec![user_ctx.clone()])
+                .is_none());
+        }
+    }
+
+    // if removed return true, else false
+    fn w_remove_user_ctx(&self, user_ctx: &UserCtx) -> bool {
+        let mut user_ctxs = self.user_ctxs.write().unwrap();
+        if let Some(ctx_vec) = user_ctxs.get_mut(&user_ctx.username) {
+            let mut target: Option<usize> = None;
+            for (i, ctx) in ctx_vec.iter().enumerate() {
+                if *ctx == *user_ctx {
+                    assert_eq!(target, None);
+                    target = Some(i);
+                }
+            }
+            match target {
+                Some(i) => { ctx_vec.remove(i); true }
+                None => false
+            }
+            
+        } else {
+            false
+        }
+    }
 }
 
 fn read_server_config() -> Option<ServerConfig> {
@@ -792,6 +890,23 @@ mod tests {
         assert!(map.insert(3, 4).is_none());
         assert!(map.insert(3, 4).is_some());
         assert_eq!(map.get(&3).unwrap(), &4);
+
+        let msg: WsMessage = WsMessage {
+            sender: WsSender::Server,
+            msg: WsMessageClass::Text("Hello".into()),
+            policy: WsDispatchType::Users(WsDispatchTargets(
+                vec![WsClient{ username: "WU".into() }]
+            ))
+        };
+        println!("{}", serde_json::to_string(&msg).unwrap());
+        let msg: WsMessage = WsMessage {
+            sender: WsSender::User(WsClient { username: "2".into() }),
+            msg: WsMessageClass::Establish,
+            policy: WsDispatchType::Users(WsDispatchTargets(
+                vec![WsClient{ username: "3".into() }]
+            ))
+        };
+        println!("{}", serde_json::to_string(&msg).unwrap());
         Ok(())
     }
 
@@ -986,6 +1101,7 @@ mod tests {
                 cwd: String::from("/home/wu/repository/pulsear"),
                 inner_addr: addr.clone(),
                 worker_num: 4,
+                managers: vec![],
                 https: false,
             };
             let server = Arc::new(Server {
