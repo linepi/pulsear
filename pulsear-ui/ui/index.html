@@ -323,6 +323,71 @@
 	.upload-button:hover {
 		background-color: #2980b9;
 	}
+
+  .notification-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+  }
+
+  .notification {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 5px;
+    background-color: var(--popup-bg-color);
+    color: var(--popup-text-color);
+    box-shadow: var(--card-shadow);
+    animation: slideIn 1s ease-out forwards, fadeOut 1s 5s ease-in forwards;
+  }
+
+  :root {
+    --important-notification-border-color: #aec8ff; 
+    --important-notification-bg-color: #eef2ff; 
+    --important-notification-text-color: #364149; 
+  }
+  [data-theme="dark"] {
+    --important-notification-border-color: #3a3c4e; 
+    --important-notification-bg-color: #414227; 
+    --important-notification-text-color: #ffffff; 
+  }
+  .notification-important {
+    border: 2px solid var(--important-notification-border-color);
+    background-color: var(--important-notification-bg-color); 
+    color: var(--important-notification-text-color); 
+    font-weight: bold; 
+    padding: 15px; 
+    display: flex;
+    align-items: center;
+    animation: slideIn 1s ease-out forwards, fadeOut 1s 5s ease-in forwards;
+  }
+
+  .notification-important .icon {
+    margin-right: 10px; 
+    font-size: 1.5em; 
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
 	</style>
   <script v-src="data.resources_prefix + 'ws.js'"></script>
 </head>
@@ -407,6 +472,9 @@
 		<section v-else-if="data.tab === 'files'">
 			<h1>Files</h1>
 		</section>
+
+    <div class="notification-container" v-show="data.localConfig.notify">
+    </div>
 	</main>
 </body>
 <script>
@@ -731,6 +799,7 @@
 		},
 		localConfig: {
 			theme: "dark",
+      notify: true,
 			userToken: "",
 			username: "",
 		},

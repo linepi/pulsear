@@ -590,7 +590,7 @@ impl Handler<WsMessage> for WsSession {
                 self.server.w_add_user_ctx(&self.user_ctx);
                 // manager login will broadcast to all clients
                 if self.server.r_is_manager(&username) {
-                    self.broadcast(format!("{username} enter the site at {}!", Time::now()));
+                    self.broadcast(format!("Enter the site!"));
                 }
             },
             WsMessageClass::File(_) => {
@@ -618,9 +618,15 @@ impl WsSession {
             let ctx_vec = pair.1;
             for user_ctx in ctx_vec.iter() {
                 if *user_ctx != self.user_ctx {
+                    let sd: WsSender;
+                    if self.server.r_is_manager(&self.user_ctx.username) {
+                        sd = WsSender::Manager(WsClient::new(&self.user_ctx.username));
+                    } else {
+                        sd = WsSender::User(WsClient::new(&self.user_ctx.username));
+                    }
                     let addr = user_ctx.session.clone().unwrap();
                     let _ = addr.do_send(WsMessage {
-                        sender: WsSender::User(WsClient::new(&self.user_ctx.username)),
+                        sender: sd,
                         msg: WsMessageClass::Text(msg.clone()),
                         policy: WsDispatchType::Broadcast
                     });
