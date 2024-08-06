@@ -255,30 +255,30 @@ class WsDispatchType {
 
 class WsMessageClass {
   static Establish = new WsMessageClass(0, null);
-  static FileSendable = new WsMessageClass(1, null);
-  static Text = new WsMessageClass(2, null);
-  static Errjson = new WsMessageClass(3, null);
-  static FileRequest = new WsMessageClass(4, null);
-  static FileResponse = new WsMessageClass(5, null);
-  static Notify = new WsMessageClass(6, null);
   static Leave = new WsMessageClass(7, null);
+  static FileSendable = new WsMessageClass(1, null);
   static withFileSendable = e => {
     return new WsMessageClass(1, e);
   };
-  static withFileRequest = e => {
-    return new WsMessageClass(4, e);
-  };
-  static withFileResponse = e => {
-    return new WsMessageClass(5, e);
-  };
+  static Text = new WsMessageClass(2, null);
   static withText = text => {
     return new WsMessageClass(2, text);
   };
+  static Errjson = new WsMessageClass(3, null);
+  static withErrjson = msg => {
+    return new WsMessageClass(3, msg)
+  };
+  static FileRequest = new WsMessageClass(4, null);
+  static withFileRequest = e => {
+    return new WsMessageClass(4, e);
+  };
+  static FileResponse = new WsMessageClass(5, null);
+  static withFileResponse = e => {
+    return new WsMessageClass(5, e);
+  };
+  static Notify = new WsMessageClass(6, null);
   static withNotify = text => {
     return new WsMessageClass(6, text);
-  };
-  static withErrjson = msg => {
-    return new WsDispatchType(3, msg)
   };
   #value
   #content
@@ -302,11 +302,27 @@ class WsMessageClass {
       case 0:
         out_obj = "Establish";
         break;
+      case 1:
+        out_obj = { FileSendable: this.#content };
+        break;
+      case 2:
+        out_obj = { Text: this.#content };
+        break;
+      case 3:
+        out_obj = { Errjson: this.#content };
+        break;
+      case 4:
+        out_obj = { FileRequest: this.#content };
+        break;
+      case 5:
+        out_obj = { FileResponse: this.#content };
+        break;
+      case 6:
+        out_obj = { Notify: this.#content };
+        break;
       case 7:
         out_obj = "Leave";
         break;
-      default:
-        out_obj = { Errjson: pclone(this.#content) };
     }
     return out_obj;
   }
@@ -498,6 +514,9 @@ function registerWs() {
   data.ws.socket.onmessage = evt => {
     console.log('Ws received: ' + evt.data);
     let ws_message = WsMessage.fromJson(evt.data);
+    if (ws_message.msg.is(WsMessageClass.Errjson)) {
+      console.log('json decode error from server!');
+    }
     if (ws_message.msg.is(WsMessageClass.Notify)) {
       onNotify(ws_message);
     }
@@ -511,6 +530,10 @@ function registerWs() {
       data.userCtx.token = "";
       data.localConfig.userToken = "";
       data.localConfig.username = "";
+    }
+    if (ws_message.msg.is(WsMessageClass.FileSendable) ||
+        ws_message.msg.is(WsMessageClass.FileResponse)) {
+      data.uploader.onWsMessage(ws_message);
     }
   }
 
