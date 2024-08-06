@@ -12,21 +12,26 @@ function pclone(obj) {
 
 class WsClient {
   #username
-  constructor(name) {
+  #user_ctx_hash
+  constructor(name, hash) {
     this.#username = name;
+    this.#user_ctx_hash = hash;
   }
 
   asObj() {
-    return { username: pclone(this.#username) }
+    return { 
+      username: pclone(this.#username),
+      user_ctx_hash: pclone(this.#user_ctx_hash) 
+    }
   }
 
   static fromObj(obj) {
-    return new WsClient(obj.username);
+    return new WsClient(obj.username, obj.user_ctx_hash);
   }
 
   static fromJson(json) {
     const obj = JSON.parse(json);
-    return new WsClient(obj.username);
+    return this.fromObj(obj);
   }
 
   toJson() {
@@ -50,18 +55,29 @@ class WsClient {
     }
     this.#username = name;
   }
+
+  get user_ctx_hash() {
+    return this.#user_ctx_hash;
+  }
+
+  set user_ctx_hash(hash) {
+    if (typeof hash !== "string") {
+      throw new Error("type should be string");
+    }
+    this.#user_ctx_hash = hash;
+  }
 }
 
 class WsSender {
   static Server = new WsSender(0, null);
   static User = new WsSender(1, null);
   static Manager = new WsSender(2, null);
-  static withUser(name) {
+  static withUser(name, hash) {
     // see WsClient
-    return new WsSender(1, new WsClient(name).asObj());
+    return new WsSender(1, new WsClient(name, hash).asObj());
   }
-  static withManager(name) {
-    return new WsSender(2, new WsClient(name).asObj());
+  static withManager(name, hash) {
+    return new WsSender(2, new WsClient(name, hash).asObj());
   }
   #value;
   #wsclient;
@@ -103,10 +119,12 @@ class WsSender {
   static fromObj(obj) {
     if (obj === "Server") {
       return WsSender.Server;
-    } else if (obj.User && typeof obj.User.username === "string") {
-      return WsSender.withUser(obj.User.username);
-    } else if (obj.Manager && typeof obj.Manager.username === "string") {
-      return WsSender.withManager(obj.Manager.username);
+    } else if (obj.User && typeof obj.User.username === "string" &&
+      typeof obj.User.user_ctx_hash === "string") {
+      return WsSender.withUser(obj.User.username, obj.User.user_ctx_hash);
+    } else if (obj.Manager && typeof obj.Manager.username === "string" &&
+      typeof obj.Manager.user_ctx_hash === "string") {
+      return WsSender.withManager(obj.Manager.username, obj.Manager.user_ctx_hash);
     } else {
       throw new Error("Invalid object for WsSender");
     }
@@ -137,29 +155,28 @@ class WsSender {
 }
 
 class WsDispatchType {
-  static Unknown = new WsDispatchType(0, null);
-  static Broadcast = new WsDispatchType(1, null);
-  static Server = new WsDispatchType(2, null);
-  static Users = new WsDispatchType(3, null);
-  static withUsers = username_list => {
-    if (!Array.isArray(username_list)) {
+  static Broadcast = new WsDispatchType(0, null);
+  static Server = new WsDispatchType(1, null);
+  static Targets = new WsDispatchType(2, null);
+  static BroadcastSameUser = new WsDispatchType(3, null);
+  static withTargets = clients => {
+    if (!Array.isArray(clients)) {
       throw new Error("users should be array");
     }
-    return new WsDispatchType(3, username_list);
+    clients.forEach(client => {
+      if (!(client instanceof WsClient)) {
+        throw new Error("should be client");
+      }
+    });
+    return new WsDispatchType(3, clients);
   }
   #value
   #wsClients
 
-  constructor(val, list) {
+  constructor(val, clients) {
     this.#value = val;
-    if (list == null) return;
-    this.#wsClients = [];
-    list.forEach(name => {
-      if (typeof name !== "string") {
-        throw new Error("name should be string");
-      }
-      this.#wsClients.push(new WsClient(name).asObj())
-    });
+    if (clients == null) return;
+    this.#wsClients = clients;
   }
 
   get wsClients() {
@@ -177,16 +194,16 @@ class WsDispatchType {
     let out_obj;
     switch (this.#value) {
       case 0:
-        out_obj = "Unknown";
-        break;
-      case 1:
         out_obj = "Broadcast";
         break;
-      case 2:
+      case 1:
         out_obj = "Server";
         break;
-      case 3: 
-        out_obj = { Users: pclone(this.#wsClients) };
+      case 2: 
+        out_obj = { Targets: pclone(this.#wsClients) };
+        break;
+      case 3:
+        out_obj = "BroadcastSameUser";
         break;
       default:
         throw new Error("unexpected");
@@ -195,18 +212,18 @@ class WsDispatchType {
   }
 
   static fromObj(obj) {
-    if (obj === "Unknown") {
-      return WsDispatchType.Unknown;
-    } else if (obj === "Broadcast") {
+    if (obj === "Broadcast") {
+      return WsDispatchType.Broadcast;
+    } else if (obj === "BroadcastSameUser") {
       return WsDispatchType.Broadcast;
     } else if (obj === "Server") {
       return WsDispatchType.Server;
-    } else if (typeof obj === "object" && obj !== null && obj.Users) {
-      let username_list = [];
-      obj.Users.forEach(ws_client => {
-        username_list.push(ws_client.username);
+    } else if (typeof obj === "object" && obj !== null && obj.Targets) {
+      let clients = [];
+      obj.Targets.forEach(client => {
+        clients.push(new WsClient(client.username, client.user_ctx_hash));
       });
-      return WsDispatchType.withUsers(username_list);
+      return WsDispatchType.withTargets(clients);
     } else {
       throw new Error("Invalid object for WsDispatchType");
     }
@@ -238,14 +255,27 @@ class WsDispatchType {
 
 class WsMessageClass {
   static Establish = new WsMessageClass(0, null);
-  static File = new WsMessageClass(1, null);
+  static FileSendable = new WsMessageClass(1, null);
   static Text = new WsMessageClass(2, null);
   static Errjson = new WsMessageClass(3, null);
-  static withFile = file => {
-    return new WsMessageClass(1, file);
+  static FileRequest = new WsMessageClass(4, null);
+  static FileResponse = new WsMessageClass(5, null);
+  static Notify = new WsMessageClass(6, null);
+  static Leave = new WsMessageClass(7, null);
+  static withFileSendable = e => {
+    return new WsMessageClass(1, e);
+  };
+  static withFileRequest = e => {
+    return new WsMessageClass(4, e);
+  };
+  static withFileResponse = e => {
+    return new WsMessageClass(5, e);
   };
   static withText = text => {
     return new WsMessageClass(2, text);
+  };
+  static withNotify = text => {
+    return new WsMessageClass(6, text);
   };
   static withErrjson = msg => {
     return new WsDispatchType(3, msg)
@@ -272,17 +302,11 @@ class WsMessageClass {
       case 0:
         out_obj = "Establish";
         break;
-      case 1:
-        out_obj = { File: pclone(this.#content) };
-        break;
-      case 2:
-        out_obj = { Text: pclone(this.#content) };
-        break;
-      case 3:
-        out_obj = { Errjson: pclone(this.#content) };
+      case 7:
+        out_obj = "Leave";
         break;
       default:
-        throw new Error("unexpected");
+        out_obj = { Errjson: pclone(this.#content) };
     }
     return out_obj;
   }
@@ -295,10 +319,18 @@ class WsMessageClass {
   static fromObj(obj) {
     if (obj === "Establish") {
       return WsMessageClass.Establish;
-    } else if (typeof obj === 'object' && obj !== null && obj.File) {
-      return WsMessageClass.withFile(obj.File);
+    } else if (obj === "Leave") {
+      return WsMessageClass.Leave;
+    } else if (typeof obj === 'object' && obj !== null && obj.FileRequest) {
+      return WsMessageClass.withFileRequest(obj.FileRequest);
+    } else if (typeof obj === 'object' && obj !== null && obj.FileResponse) {
+      return WsMessageClass.withFileResponse(obj.FileResponse);
+    } else if (typeof obj === 'object' && obj !== null && obj.FileSendable) {
+      return WsMessageClass.withFileSendable(obj.FileSendable);
     } else if (typeof obj === 'object' && obj !== null && obj.Text) {
       return WsMessageClass.withText(obj.Text);
+    } else if (typeof obj === 'object' && obj !== null && obj.Notify) {
+      return WsMessageClass.withNotify(obj.Notify);
     } else if (typeof obj === 'object' && obj !== null && obj.Errjson) {
       return WsMessageClass.withErrjson(obj.Errjson);
     } else {
@@ -415,11 +447,11 @@ function wssend(msg) {
   data.ws.socket.send(msg);
 }
 
-function onBroadCast(ws_message) {
+function onNotify(ws_message) {
   if (!(ws_message instanceof WsMessage)) {
     throw new Error("type is not true");
   }
-  console.log('receive broadcast: ', ws_message);
+  console.log('receive notify: ', ws_message);
 
   let sender = "";
   let important = false;
@@ -456,7 +488,7 @@ function registerWs() {
   data.ws.socket.onopen = evt => {
     console.log('Ws connected');
     let msg = new WsMessage(
-      WsSender.withUser(data.userCtx.username),
+      WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
       WsMessageClass.Establish,
       WsDispatchType.Server
     );
@@ -466,8 +498,19 @@ function registerWs() {
   data.ws.socket.onmessage = evt => {
     console.log('Ws received: ' + evt.data);
     let ws_message = WsMessage.fromJson(evt.data);
-    if (ws_message.policy.equals(WsDispatchType.Broadcast)) {
-      onBroadCast(ws_message);
+    if (ws_message.msg.is(WsMessageClass.Notify)) {
+      onNotify(ws_message);
+    }
+    if (ws_message.msg.is(WsMessageClass.Establish)) {
+      data.userCtx.user_ctx_hash = ws_message.policy.wsClients[0].user_ctx_hash;
+    }
+    if (ws_message.msg.is(WsMessageClass.Leave)) {
+      data.ws.socket.close();
+      data.userCtx.login = false
+      data.userCtx.username = "";
+      data.userCtx.token = "";
+      data.localConfig.userToken = "";
+      data.localConfig.username = "";
     }
   }
 

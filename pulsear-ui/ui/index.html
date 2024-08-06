@@ -726,13 +726,12 @@
 
 	function onLogout(response) {
 		onResponseCode(response.code);
-		data.userCtx.login = false
-		data.userCtx.username = "";
-		data.userCtx.token = "";
-		data.localConfig.userToken = "";
-		data.localConfig.username = "";
-    
-    data.ws.socket.close();
+		let msg = new WsMessage(
+			WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
+			WsMessageClass.Leave,
+			WsDispatchType.Server
+		);
+		wssend(msg.toJson());
 	}
 
 	function onUserProfile() {
@@ -786,6 +785,7 @@
 			token: "",
 			login: false,
 			userMenu: false,
+			user_ctx_hash: ""
 		},
 		loginCtx: {
 			usernameInput: "",
@@ -855,7 +855,22 @@
 <script>
   const nameInput = document.getElementById("input_file");
   nameInput.addEventListener("input", () => {
-    console.log('input clicked');
-  });
+    let file = nameInput.files[0];
+    let sliceSize = 40960;
+    let sliceIdx = 0;
+    let filesize = file.size;
+    let maxSlice = (filesize-1) / sliceSize + 1;
+    let lastOne = filesize - (sliceSize * (maxSlice - 1));
+    while (sliceIdx <= maxSlice) {
+      let sendSize = sliceSize;
+      if (sliceIdx == maxSlice) {
+        sendSize = lastOne;
+      }
+      let slice = file.slice(sliceIdx * sliceSize, sliceIdx * sliceSize + sendSize)
+      console.log("send slice: ", slice);
+      data.ws.socket.send(slice);
+      sliceIdx++;
+    }
+  })
 </script>
 </html>

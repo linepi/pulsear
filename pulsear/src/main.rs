@@ -121,6 +121,14 @@ pub struct UserCtx {
     session: Option<actix::Addr<WsSession>>,
 }
 
+impl UserCtx {
+    fn hash(&self) -> String {
+        gen_random_token(&TokenGenerator {
+            s: format!("{}{}{}", self.username, self.token, self.establish_t)
+        })
+    }
+}
+
 impl PartialEq for UserCtx {
     fn eq(&self, other: &Self) -> bool {
         self.username == other.username
@@ -471,43 +479,78 @@ pub async fn logout(param: web::Json<LogoutRequest>, data: web::Data<Arc<Server>
     resp
 }
 
-
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 struct WsClient {
-    username: String
+    username: String,
+    user_ctx_hash: String,
 }
 
 impl WsClient {
-    fn new(usrname: &String) -> Self {
-        Self { username: usrname.clone() }
+    fn new(user_ctx: &UserCtx) -> Self {
+        Self { 
+            username: user_ctx.username.clone(),
+            user_ctx_hash: user_ctx.hash() 
+        }
     }
 }
 
+// all thing about a file and its transfer
+// binary package:
+//  bytes:   |   32   |  4        |  slice_size  |
+//  meaning: | sha256 | slice_idx | file content |
 #[derive(serde::Deserialize, serde::Serialize)]
-struct WsDispatchTargets(Vec<WsClient>);
+struct FileRequest {
+    username: String,
+    name: String,
+    size: u64,
+    slice_size: u64,
+    sha256: String, 
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum FileResponseStatus {
+    Ok,
+    Resend,
+    Fatalerr,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct FileResponse {
+    sha256: String,
+    slice_idx: u64,
+    status: FileResponseStatus
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 enum WsMessageClass {
-    Establish,
-    File(Vec<u8>),
-    Text(String),
-    Errjson(String),
+    Establish, // two direction
+    Leave, // on logout 
+    FileSendable(bool), // come out
+    FileResponse(FileResponse), // come out
+    FileRequest(FileRequest), // come in
+    Text(String), // two direction
+    Notify(String),
+    Errjson(String), // 
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 enum WsDispatchType {
-    Unknown,
     Broadcast,
+    BroadcastSameUser,
     Server,
-    Users(WsDispatchTargets),
+    Targets(Vec<WsClient>),
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 enum WsSender {
     Server,
     User(WsClient),
-    Manager(WsClient)
+    Manager(WsClient),
 }
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct WsBinMessage(bytes::Bytes);
 
 #[derive(Message)]
 #[rtype(result = "()")]
@@ -518,10 +561,52 @@ struct WsMessage {
     policy: WsDispatchType,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+#[derive(serde::Deserialize, serde::Serialize)]
+struct WsMessageInner {
+    sender: WsSender,
+    msg: WsMessageClass,
+    policy: WsDispatchType,
+}
+
 struct WsSession {
     server: Arc<Server>,
     hb_t: Time,
     user_ctx: UserCtx,
+}
+
+struct FileWorker {
+
+}
+
+pub struct FileHandler {
+    workers: Vec<FileWorker>,
+}
+
+impl FileHandler {
+    fn new() -> Self {
+        Self { 
+            workers: vec![],
+        }
+    }
+
+    // add a new client session
+    fn add_user_ctx(&self, user_ctx: UserCtx) {
+
+    }
+
+    fn register_file_response_callback(&self, f: &dyn Fn(&UserCtx, FileResponse)) {
+
+    }
+    
+    fn add(&self, pkg: FileRequest) -> bool {
+        true
+    }
+
+    fn send(&self, bytes: &bytes::Bytes) {
+
+    }
 }
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -540,16 +625,20 @@ impl actix::Actor for WsSession {
             }
             ctx.ping(b""); // ping will send to Self
         });
+        self.server.file_handler.register_file_response_callback(&|user_ctx, pkg_resp| {
+            user_ctx.session.clone().unwrap().do_send(WsMessage {
+                sender: WsSender::Server,
+                msg: WsMessageClass::FileResponse(pkg_resp),
+                policy: WsDispatchType::Targets(vec![WsClient::new(user_ctx)])
+            })
+        });
     }
 
     fn stopping(&mut self, _ctx: &mut Self::Context) -> actix::Running {
         actix::Running::Stop
     }
 
-    fn stopped(&mut self, _: &mut Self::Context) {
-        if self.server.r_is_manager(&self.user_ctx.username) {
-            self.broadcast("leave the site".into());
-        }
+    fn stopped(&mut self, ctx: &mut Self::Context) {
         assert!(self.server.w_remove_user_ctx(&self.user_ctx), "should have user_ctx");
         log::info!("actor stopped");
     }
@@ -558,17 +647,97 @@ impl actix::Actor for WsSession {
 impl Handler<WsMessage> for WsSession {
     type Result = ();
 
+    // dispatch message
     fn handle(&mut self, ws_message: WsMessage, ctx: &mut Self::Context) {
-        log::info!("handle wsmessage {}", 
-            serde_json::to_string(&ws_message).expect("ws message must be deserializable"));
+        log::info!(
+            "handle wsmessage {}",
+            serde_json::to_string(&ws_message).expect("ws message must be deserializable")
+        );
+        let pred: Box<dyn Fn(&UserCtx) -> bool>;
+        match &ws_message.policy {
+            WsDispatchType::Broadcast => {
+                pred = Box::new(|user_ctx| { 
+                    user_ctx != &self.user_ctx
+                });
+            },
+            WsDispatchType::BroadcastSameUser => {
+                pred = Box::new(|user_ctx| { 
+                    user_ctx != &self.user_ctx && user_ctx.username == self.user_ctx.username
+                });
+            },
+            WsDispatchType::Server => {
+                ctx.address().do_send(WsMessageInner {
+                    sender: ws_message.sender,
+                    msg: ws_message.msg,
+                    policy: ws_message.policy
+                });
+                return;
+            },
+            WsDispatchType::Targets(clients) => {
+                pred = Box::new(|user_ctx| {
+                    for client in clients.iter() {
+                        if user_ctx.hash() == client.user_ctx_hash {
+                            return true;
+                        }
+                    }
+                    false
+                });
+            }
+        }
+        let user_ctxs = self.server.r_user_ctxs();
+        for pair in user_ctxs.iter() {
+            let ctx_vec = pair.1;
+            for user_ctx in ctx_vec.iter() {
+                // must send to self
+                if pred(user_ctx) {
+                    let new_ws_message: WsMessage = serde_json::from_str(
+                        serde_json::to_string(&ws_message).unwrap().as_str()).unwrap();
+                    user_ctx.session.clone().unwrap().do_send(WsMessageInner {
+                        sender: new_ws_message.sender,
+                        msg: new_ws_message.msg,
+                        policy: WsDispatchType::Targets(vec![WsClient::new(user_ctx)])
+                    });
+                }
+            }
+        }
+
+    }
+}
+
+impl Handler<WsMessageInner> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, ws_message: WsMessageInner, ctx: &mut Self::Context) {
+        match &ws_message.policy {
+            WsDispatchType::Server => (),
+            WsDispatchType::Targets(clients) => {
+                if clients.len() != 1 {
+                    panic!("unexpected");
+                }
+            },
+            _ => {
+                panic!("unexpected");
+            }
+        }
+
+        log::info!(
+            "handle wsmessage inner {}",
+            serde_json::to_string(&ws_message).expect("ws message must be deserializable")
+        );
+
         match ws_message.msg {
             WsMessageClass::Establish => {
+                match &ws_message.policy {
+                    WsDispatchType::Server => (),
+                    _ => { panic!("unexpected"); }
+                }
+
                 let username = match ws_message.sender {
                     WsSender::User(u) => u.username.clone(),
                     _ => {
                         log::error!("unexpected");
                         return;
-                    }
+                    },
                 };
                 let sqlhandler = SqlHandler { dbpool: self.server.dbpool.clone() };
                 let token = sqlhandler
@@ -580,56 +749,100 @@ impl Handler<WsMessage> for WsSession {
                 self.user_ctx.token = token.clone();
                 self.user_ctx.username = username.clone();
                 self.user_ctx.session = Some(ctx.address());
-                log::info!(
-                    "add new user_ctx: {}",
-                    self.user_ctx
-                );
-                self.server.w_add_user_ctx(&self.user_ctx);
+                log::info!("add new user_ctx: {}", self.user_ctx);
+                self.server.file_handler.add_user_ctx(self.user_ctx.clone());
+                self.server.w_add_user_ctx(self.user_ctx.clone());
+
                 // manager login will broadcast to all clients
                 if self.server.r_is_manager(&username) {
-                    self.broadcast("Enter the site!".into());
+                    ctx.address().do_send(WsMessage {
+                        sender: WsSender::Manager(WsClient::new(&self.user_ctx)),
+                        msg: WsMessageClass::Notify("Enter the site!".into()),
+                        policy: WsDispatchType::Broadcast,
+                    });
+                } 
+                // user login will broadcast to all clients with same user
+                else {
+                    ctx.address().do_send(WsMessage {
+                        sender: WsSender::User(WsClient::new(&self.user_ctx)),
+                        msg: WsMessageClass::Notify("your account login at another place!".into()),
+                        policy: WsDispatchType::BroadcastSameUser,
+                    });
                 }
-            },
-            WsMessageClass::File(_) => {
 
+                // response establish with user_ctx_hash
+                ctx.text(
+                    serde_json::to_string(&WsMessage {
+                        sender: WsSender::Server,
+                        msg: WsMessageClass::Establish,
+                        policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+                    })
+                    .unwrap(),
+                );
+            },
+            WsMessageClass::Leave => {
+                match &ws_message.policy {
+                    WsDispatchType::Server => (),
+                    _ => { panic!("unexpected"); }
+                }
+
+                if self.server.r_is_manager(&self.user_ctx.username) {
+                    ctx.address().do_send(WsMessage {
+                        sender: WsSender::Manager(WsClient::new(&self.user_ctx)),
+                        msg: WsMessageClass::Notify("Leave the site!".into()),
+                        policy: WsDispatchType::Broadcast,
+                    });
+                } 
+                // user login will broadcast to all clients with same user
+                else {
+                    ctx.address().do_send(WsMessage {
+                        sender: WsSender::User(WsClient::new(&self.user_ctx)),
+                        msg: WsMessageClass::Notify("your account leave at another place!".into()),
+                        policy: WsDispatchType::BroadcastSameUser,
+                    });
+                }
+
+                // response establish with user_ctx_hash
+                ctx.text(
+                    serde_json::to_string(&WsMessage {
+                        sender: WsSender::Server,
+                        msg: WsMessageClass::Leave,
+                        policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+                    })
+                    .unwrap(),
+                );
+            },
+            WsMessageClass::FileRequest(pkg) => {
+                ctx.text(
+                    serde_json::to_string(&WsMessage {
+                        sender: WsSender::Server,
+                        msg: WsMessageClass::FileSendable(self.server.file_handler.add(pkg)),
+                        policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+                    })
+                    .unwrap(),
+                );
             },
             WsMessageClass::Text(_) => {
                 ctx.text(serde_json::to_string(&ws_message).unwrap());
             },
             WsMessageClass::Errjson(e) => {
-                log::error!("unexpect msg: {e}");
+                log::error!("err json: {e}");
+            },
+            WsMessageClass::Notify(_) => {
+                ctx.text(serde_json::to_string(&ws_message).unwrap());
+            },
+            t => {
+                log::error!("unexpect msg: {}", serde_json::to_string(&t).unwrap());
             }
         }
     }
 }
 
-impl WsSession {
-    // use user_ctxs read lock
-    fn broadcast(&self, msg: String) {
-        let user_ctxs;
-        // avoid network time let lock consume too much, clone one
-        {
-            user_ctxs = self.server.user_ctxs.read().unwrap().clone();
-        }
-        for pair in user_ctxs.iter() {
-            let ctx_vec = pair.1;
-            for user_ctx in ctx_vec.iter() {
-                if *user_ctx != self.user_ctx {
-                    let sd: WsSender;
-                    if self.server.r_is_manager(&self.user_ctx.username) {
-                        sd = WsSender::Manager(WsClient::new(&self.user_ctx.username));
-                    } else {
-                        sd = WsSender::User(WsClient::new(&self.user_ctx.username));
-                    }
-                    let addr = user_ctx.session.clone().unwrap();
-                    let _ = addr.do_send(WsMessage {
-                        sender: sd,
-                        msg: WsMessageClass::Text(msg.clone()),
-                        policy: WsDispatchType::Broadcast
-                    });
-                }
-            }
-        }
+impl Handler<WsBinMessage> for WsSession {
+    type Result = ();
+    fn handle(&mut self, b: WsBinMessage, _ctx: &mut Self::Context) {
+        self.server.file_handler.send(&b.0);
+        log::debug!("received a binary: {:?}", b.0);
     }
 }
 
@@ -657,18 +870,23 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                 let ws_message: WsMessage = match serde_json::from_str(&text) {
                     Ok(m) => m,
                     Err(e) => {
-                        ctx.text(serde_json::to_string(&WsMessage {
-                            sender: WsSender::Server,
-                            msg: WsMessageClass::Errjson(e.to_string()),
-                            policy: WsDispatchType::Unknown
-                        }).unwrap());
+                        ctx.text(
+                            serde_json::to_string(&WsMessage {
+                                sender: WsSender::Server,
+                                msg: WsMessageClass::Errjson(e.to_string()),
+                                policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+                            })
+                            .unwrap(),
+                        );
                         return;
-                    }
+                    },
                 };
                 // send Self for more function
                 ctx.address().do_send(ws_message);
             },
-            ws::Message::Binary(_) => {},
+            ws::Message::Binary(b) => {
+                ctx.address().do_send(WsBinMessage(b));
+            },
             ws::Message::Close(reason) => {
                 log::info!("ws receive close: {:?}", reason);
                 ctx.close(reason);
@@ -712,13 +930,14 @@ pub struct ServerConfig {
     pub inner_addr: String,
     pub worker_num: i32,
     pub https: bool,
-    pub managers: Vec<String>
+    pub managers: Vec<String>,
 }
 
 pub struct Server {
     pub config: RwLock<ServerConfig>,
     // map username to a list of UserCtx
     pub user_ctxs: RwLock<HashMap<String, Vec<UserCtx>>>,
+    pub file_handler: FileHandler,
     pub dbpool: mysql::Pool,
 }
 
@@ -731,16 +950,29 @@ impl Server {
         self.r_config().managers.contains(&username)
     }
 
+    fn r_user_ctxs(&self) -> HashMap<String, Vec<UserCtx>> {
+        self.user_ctxs.read().unwrap().clone()
+    }
+
+    fn r_user_ctxs_by_username(&self, username: &String) -> Vec<UserCtx> {
+        self.user_ctxs.read().unwrap().get(username).unwrap().clone()
+    }
+
+    fn r_user_ctxs_exclude_self(&self, user_ctx: &UserCtx) -> Vec<UserCtx> {
+        let mut ctx_vec = self.r_user_ctxs_by_username(&user_ctx.username);
+        let index = ctx_vec.iter().position(|x| *x == *user_ctx).unwrap();
+        ctx_vec.remove(index);
+        ctx_vec
+    }
+
     // add a user_ctx to server state, must not exist
-    fn w_add_user_ctx(&self, user_ctx: &UserCtx) {
+    fn w_add_user_ctx(&self, user_ctx: UserCtx) {
         let mut user_ctxs = self.user_ctxs.write().unwrap();
         if let Some(ctx_vec) = user_ctxs.get_mut(&user_ctx.username) {
-            assert!(!ctx_vec.contains(user_ctx), "must not exist");
+            assert!(!ctx_vec.contains(&user_ctx), "must not exist");
             ctx_vec.push(user_ctx.clone());
         } else {
-            assert!(user_ctxs
-                .insert(user_ctx.username.clone(), vec![user_ctx.clone()])
-                .is_none());
+            assert!(user_ctxs.insert(user_ctx.username.clone(), vec![user_ctx.clone()]).is_none());
         }
     }
 
@@ -756,10 +988,12 @@ impl Server {
                 }
             }
             match target {
-                Some(i) => { ctx_vec.remove(i); true }
-                None => false
+                Some(i) => {
+                    ctx_vec.remove(i);
+                    true
+                },
+                None => false,
             }
-            
         } else {
             false
         }
@@ -867,6 +1101,7 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let server = Arc::new(Server {
+        file_handler: FileHandler::new(),
         config: RwLock::new(read_server_config().unwrap()),
         user_ctxs: RwLock::new(HashMap::new()),
         dbpool: {
@@ -907,23 +1142,6 @@ mod tests {
         assert!(map.insert(3, 4).is_none());
         assert!(map.insert(3, 4).is_some());
         assert_eq!(map.get(&3).unwrap(), &4);
-
-        let msg: WsMessage = WsMessage {
-            sender: WsSender::Server,
-            msg: WsMessageClass::Text("Hello".into()),
-            policy: WsDispatchType::Users(WsDispatchTargets(
-                vec![WsClient{ username: "WU".into() }]
-            ))
-        };
-        println!("{}", serde_json::to_string(&msg).unwrap());
-        let msg: WsMessage = WsMessage {
-            sender: WsSender::User(WsClient { username: "2".into() }),
-            msg: WsMessageClass::Establish,
-            policy: WsDispatchType::Users(WsDispatchTargets(
-                vec![WsClient{ username: "3".into() }]
-            ))
-        };
-        println!("{}", serde_json::to_string(&msg).unwrap());
         Ok(())
     }
 
@@ -1122,6 +1340,7 @@ mod tests {
                 https: false,
             };
             let server = Arc::new(Server {
+                file_handler: FileHandler::new(),
                 config: RwLock::new(server_config),
                 user_ctxs: RwLock::new(HashMap::new()),
                 dbpool: {
