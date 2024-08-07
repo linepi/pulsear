@@ -399,9 +399,10 @@ pub async fn index() -> HttpResponse {
 }
 
 #[get("/resources/{path}")]
-pub async fn resources(path: web::Path<String>) -> HttpResponse {
-  log::info!("visit path {}", path);
-  let res = std::fs::read_to_string(format!("pulsear-ui/ui/{}", path)).unwrap_or_else(|e| {
+pub async fn resources(p: web::Path<String>) -> HttpResponse {
+  let path = format!("pulsear-ui/ui/{}", p);
+  log::info!("read resources {}", path);
+  let res = std::fs::read_to_string(&path).unwrap_or_else(|e| {
     println!("error: {} of {}", e, path);
     e.to_string()
   });

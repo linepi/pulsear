@@ -414,15 +414,7 @@
     border-radius: 10px;
     table-layout: auto; 
     overflow-x: auto; 
-  }
-  .resize-handle {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 2px;
-    height: 100%;
-    cursor: col-resize;
-    background-color: #666; 
+    margin-top: 10px;
   }
   .file-list th {
     position: relative;
@@ -440,7 +432,7 @@
   }
 
   .file-list td {
-    padding: 2px 12px;
+    padding: 3px 14px;
     font-size: smaller;
     text-align: left;
     background-color: var(--file-table-row-bg-color);
@@ -449,6 +441,15 @@
   }
   .file-list tbody tr:hover td {
     background-color: var(--file-table-row-hover-color); 
+  }
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 2px;
+    height: 100%;
+    cursor: col-resize;
+    background-color: #666; 
   }
 
   .button {
@@ -466,6 +467,7 @@
   </style>
   <script v-src="data.resources_prefix + 'ws.js'"></script>
   <script v-src="data.resources_prefix + 'uploader.js'"></script>
+  <link v-href="data.resources_prefix + 'icon.css'" rel='stylesheet'>
 </head>
 <body>
   <header>
@@ -483,8 +485,12 @@
             else data.loginWindow=true;
             ">Dashboard</a></li>
           <li><a href="#" @click="
-            if (data.userCtx.login) data.tab='files';
-            else data.loginWindow=true;
+            if (data.userCtx.login) { 
+              data.tab='files'; 
+              loadFileList(); 
+            } else { 
+              data.loginWindow=true;
+            }
             ">Files</a></li>
           <li v-if="!data.userCtx.login">
             <a href="#" @click="data.loginWindow=true">Sign In</a>
@@ -545,6 +551,9 @@
       <p>Select a section from the navigation menu to get started.</p>
     </section>
     <section v-else-if="data.tab === 'files'">
+      <div class="gg-software-upload" 
+           style="margin-left:5px"
+           @click="document.getElementById('upload').click()"></div>
       <table class="file-list">
         <thead>
             <tr>
@@ -566,7 +575,7 @@
             </tr> -->
         </tbody>
       </table>
-      <input id="input_file" type="file" v-show="true">
+      <input id="upload" type="file" v-show="false">
     </section>
 
     <div class="notification-container" v-show="data.localConfig.notify"></div>
@@ -795,6 +804,7 @@
     if (!data.userCtx.login) return;
     // add file list element
     let tbody = document.querySelector('tbody');
+    tbody.innerHTML = '';
 
     fetch(data.api.getfile, {
       method: 'POST',
@@ -827,8 +837,13 @@
         let td4 = document.createElement('td'); td4.innerHTML = fileElem.access_t;
         let td5 = document.createElement('td'); td5.innerHTML = fileElem.modify_t;
         let td6 = document.createElement('td'); 
-        let button = document.createElement('button'); button.innerHTML = "Download";
-        td6.appendChild(button);
+        let actions = document.createElement('div'); 
+        actions.className = "gg-software-download";
+        actions.addEventListener('click', function(evt) {
+
+        });
+
+        td6.appendChild(actions);
         tr.appendChild(td1);
         tr.appendChild(td2);
         tr.appendChild(td3);
@@ -861,7 +876,6 @@
 
     registerWs();
     data.uploader = new Uploader();
-    loadFileList();
   }
 
   function onLogout(response) {
@@ -893,7 +907,7 @@
     loadLocalConfig(rawData);
     walkDom(document.documentElement, doRegisterListeners)
 
-    // init file list
+    // init file list column resize handle
     const handles = document.querySelectorAll('.resize-handle');
     let leftTh, rightTh, startX, leftStartW, rightStartW;
     handles.forEach(handle => {
@@ -929,6 +943,12 @@
 
       handle.addEventListener('mousedown', mouseDownHandler);
     })
+
+    // init uploader
+    document.getElementById('upload').addEventListener('input', function(e) {
+      data.uploader.upload(e.target.files[0]);
+      loadFileList();
+    });
   }
 
   function onResponseCode(code) {
