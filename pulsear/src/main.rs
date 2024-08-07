@@ -296,8 +296,8 @@ impl SqlHandler {
 
     let mut dbconn = self.dbpool.start_transaction(TxOpts::default())?;
     let stmt = dbconn.prep(
-      r"INSERT INTO user(username, token)
-			  VALUES (:username, :token)",
+      r"INSERT INTO user(username, token, type)
+			  VALUES (:username, :token, 'user')",
     )?;
     dbconn.exec_drop(
       &stmt,

@@ -5,6 +5,7 @@ CREATE TABLE `user` (
     `register_time` datetime NOT NULL COMMENT 'Register Time',
     `last_updated_time` datetime NOT NULL COMMENT 'This row last updated time',
     `last_login_time` datetime NOT NULL COMMENT 'Last login time',
+    `type` varchar(16) NOT NULL COMMENT 'master, manager, menber, user, visiter',
     PRIMARY KEY (`id`),
     UNIQUE KEY `username` (`username`),
     UNIQUE KEY `token` (`token`)
@@ -14,9 +15,23 @@ CREATE TABLE `user_config` (
     `id` int NOT NULL AUTO_INCREMENT COMMENT 'Primary Key',
     `user_id` int NOT NULL COMMENT 'User foreign key',
     `theme` varchar(16) DEFAULT NULL COMMENT 'Color theme',
+    `filelist_sort_key_type` TEXT DEFAULT NULL COMMENT 'map: map filepath(relative path) sort key of file list',
+    `filelist_columns` TEXT DEFAULT NULL COMMENT 'list: list of columns show in file list',
     PRIMARY KEY (`id`),
     KEY `user_id` (`user_id`),
     CONSTRAINT `user_config_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
+) COMMENT '';
+
+CREATE TABLE `user_file_action` (
+    `id` int NOT NULL AUTO_INCREMENT COMMENT 'Primary Key',
+    `user_id` int NOT NULL COMMENT 'User foreign key',
+    `filename` varchar(16) DEFAULT NULL COMMENT '',
+    `filepath` varchar(255) DEFAULT NULL COMMENT '',
+    `action` varchar(32) DEFAULT NULL COMMENT 'upload, download, delete, share',
+    `create_time` datetime NOT NULL COMMENT 'action create time',
+    PRIMARY KEY (`id`),
+    KEY `user_id` (`user_id`),
+    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
 ) COMMENT '';
 
 DELIMITER $$
@@ -27,6 +42,7 @@ BEGIN
     SET NEW.last_updated_time = NOW();
     SET NEW.last_login_time = NOW();
 END$$
+
 CREATE TRIGGER `before_user_update` BEFORE UPDATE ON `user`
 FOR EACH ROW
 BEGIN
@@ -36,4 +52,11 @@ BEGIN
         SET NEW.last_updated_time = NOW();
     END IF;
 END$$
+
+CREATE TRIGGER `before_file_action_insert` BEFORE INSERT ON `user_file_action`
+FOR EACH ROW
+BEGIN
+    SET NEW.create_time = NOW();
+END$$
+
 DELIMITER ;
