@@ -18,10 +18,14 @@ class Uploader {
       let hashval = ws_message.msg.content[0];
       let can = ws_message.msg.content[1];
       if (can) {
-        this.uploadImpl(this.#files[hashval], hashval);
+        this.uploadImpl(this.#files[hashval].f, hashval);
       }
     }
     if (ws_message.msg.is(WsMessageClass.FileResponse)) {
+      let resp = ws_message.msg.content;
+      if (resp.status == "Finish") {
+        loadFileList();
+      }
     }
   }
 
@@ -68,19 +72,20 @@ class Uploader {
 
   upload(file) {
     let hashval = this.hash(file);
+    let request = {
+      username: data.userCtx.username,
+      name: file.name,
+      size: file.size,
+      slice_size: this.#sliceSize,
+      last_modified_t: file.lastModified,
+      file_hash: this.hash(file),
+    };
     let msg = new WsMessage(
       WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
-      WsMessageClass.withFileRequest({
-        username: data.userCtx.username,
-        name: file.name,
-        size: file.size,
-        slice_size: this.#sliceSize,
-        last_modified_t: file.lastModified,
-        file_hash: this.hash(file),
-      }),
+      WsMessageClass.withFileRequest(request),
       WsDispatchType.Server
     );
     wssend(msg.toJson());
-    this.#files[hashval] = file;
+    this.#files[hashval] = { f: file, req: request };
   }
 }

@@ -1,7 +1,5 @@
-#![allow(unused_imports)]
 #![allow(dead_code)]
 
-use actix_web::rt::time;
 use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 use bytes::Buf;
@@ -13,7 +11,6 @@ use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
-use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, RwLock};
 use std::time::*;
@@ -644,13 +641,14 @@ struct FileRequest {
 #[derive(serde::Deserialize, serde::Serialize)]
 enum FileResponseStatus {
   Ok,
+  Finish, // finish when the last slice index is Ok
   Resend,
   Fatalerr,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct FileResponse {
-  sha256: String,
+  file_hash: String,
   slice_idx: u64,
   status: FileResponseStatus,
 }
@@ -670,7 +668,9 @@ enum WsMessageClass {
 #[derive(serde::Deserialize, serde::Serialize)]
 enum WsDispatchType {
   Broadcast,
+  BroadcastExceptMe,
   BroadcastSameUser,
+  BroadcastSameUserExceptMe,
   Server,
   Targets(Vec<WsClient>),
 }
@@ -717,11 +717,12 @@ struct WsSession {
 struct FileWorker {}
 struct FileJob {
   request: FileRequest,
+  user_ctx: UserCtx,
   file: std::fs::File,
 }
 
 impl FileJob {
-  fn new(req: FileRequest) -> Self {
+  fn new(req: FileRequest, user_ctx: UserCtx) -> Self {
     let storage = std::path::PathBuf::from("inner/storage");
     let userfolder = storage.join(&req.username);
     if !userfolder.exists() {
@@ -735,31 +736,50 @@ impl FileJob {
         .open(filepath).unwrap();
     Self {
       request: req,
-      file: f
+      file: f,
+      user_ctx
     }
+  }
+
+  fn on_slice_send(&self, index: u64) {
+    let status: FileResponseStatus;
+    let policy: WsDispatchType;
+    // the last index
+    if index == (self.request.size - 1) / self.request.slice_size + 1 {
+      status = FileResponseStatus::Finish;
+      policy = WsDispatchType::BroadcastSameUser;
+    } else {
+      status = FileResponseStatus::Ok;
+      policy = WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]);
+    }
+    self.user_ctx.session.as_ref().unwrap().do_send(WsMessage {
+      sender: WsSender::Server,
+      msg: WsMessageClass::FileResponse(FileResponse {
+        file_hash: self.request.file_hash.clone(),
+        slice_idx: index,
+        status
+      }),
+      policy
+    })
   }
 }
 
 pub struct FileHandler {
   workers: Vec<FileWorker>,
-  requests: RwLock<HashMap<String, FileJob>>
+  requests: RwLock<HashMap<String, FileJob>>,
 }
 
 impl FileHandler {
   fn new() -> Self {
     Self { 
       workers: vec![],
-      requests: RwLock::new(HashMap::new())
+      requests: RwLock::new(HashMap::new()),
     }
   }
 
-  fn register_file_response_callback(&self, f: &dyn Fn(&UserCtx, FileResponse)) {
-
-  }
-
-  fn add(&self, req: FileRequest) -> bool {
+  fn add(&self, req: FileRequest, user_ctx: UserCtx) -> bool {
     let mut requests = self.requests.write().unwrap();
-    requests.insert(req.file_hash.clone(), FileJob::new(req));
+    requests.insert(req.file_hash.clone(), FileJob::new(req, user_ctx));
     true
   }
 
@@ -779,6 +799,7 @@ impl FileHandler {
 
     job.file.seek(SeekFrom::Start(slice_size*index)).unwrap();
     job.file.write_all(&bytes.slice(36..)).unwrap();
+    job.on_slice_send(index);
   }
 }
 
@@ -802,16 +823,6 @@ impl actix::Actor for WsSession {
       }
       ctx.ping(b""); // ping will send to Self
     });
-    self
-      .server
-      .file_handler
-      .register_file_response_callback(&|user_ctx, pkg_resp| {
-        user_ctx.session.clone().unwrap().do_send(WsMessage {
-          sender: WsSender::Server,
-          msg: WsMessageClass::FileResponse(pkg_resp),
-          policy: WsDispatchType::Targets(vec![WsClient::new(user_ctx)]),
-        })
-      });
   }
 
   fn stopping(&mut self, _ctx: &mut Self::Context) -> actix::Running {
@@ -848,9 +859,17 @@ impl Handler<WsMessage> for WsSession {
     let pred: Box<dyn Fn(&UserCtx) -> bool>;
     match &ws_message.policy {
       WsDispatchType::Broadcast => {
+        pred = Box::new(|_| true);
+      }
+      WsDispatchType::BroadcastExceptMe => {
         pred = Box::new(|user_ctx| user_ctx != &self.user_ctx);
       }
       WsDispatchType::BroadcastSameUser => {
+        pred = Box::new(|user_ctx| {
+          user_ctx.username == self.user_ctx.username
+        });
+      }
+      WsDispatchType::BroadcastSameUserExceptMe => {
         pred = Box::new(|user_ctx| {
           user_ctx != &self.user_ctx && user_ctx.username == self.user_ctx.username
         });
@@ -882,7 +901,7 @@ impl Handler<WsMessage> for WsSession {
         if pred(user_ctx) {
           let new_ws_message: WsMessage =
             serde_json::from_str(serde_json::to_string(&ws_message).unwrap().as_str()).unwrap();
-          user_ctx.session.clone().unwrap().do_send(WsMessageInner {
+          user_ctx.session.as_ref().unwrap().do_send(WsMessageInner {
             sender: new_ws_message.sender,
             msg: new_ws_message.msg,
             policy: WsDispatchType::Targets(vec![WsClient::new(user_ctx)]),
@@ -958,7 +977,7 @@ impl Handler<WsMessageInner> for WsSession {
           ctx.address().do_send(WsMessage {
             sender: WsSender::User(WsClient::new(&self.user_ctx)),
             msg: WsMessageClass::Notify("your account login at another place!".into()),
-            policy: WsDispatchType::BroadcastSameUser,
+            policy: WsDispatchType::BroadcastSameUserExceptMe,
           });
         }
 
@@ -992,7 +1011,7 @@ impl Handler<WsMessageInner> for WsSession {
           ctx.address().do_send(WsMessage {
             sender: WsSender::User(WsClient::new(&self.user_ctx)),
             msg: WsMessageClass::Notify("your account leave at another place!".into()),
-            policy: WsDispatchType::BroadcastSameUser,
+            policy: WsDispatchType::BroadcastSameUserExceptMe,
           });
         }
 
@@ -1010,7 +1029,9 @@ impl Handler<WsMessageInner> for WsSession {
         ctx.address().do_send(WsTextMessage(
           serde_json::to_string(&WsMessage {
             sender: WsSender::Server,
-            msg: WsMessageClass::FileSendable((pkg.file_hash.clone(), self.server.file_handler.add(pkg))),
+            msg: WsMessageClass::FileSendable((pkg.file_hash.clone(), 
+              self.server.file_handler.add(pkg, self.user_ctx.clone()))
+            ),
             policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
           })
           .unwrap(),
@@ -1023,6 +1044,9 @@ impl Handler<WsMessageInner> for WsSession {
         log::error!("err json: {e}");
       }
       WsMessageClass::Notify(_) => {
+        ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
+      }
+      WsMessageClass::FileResponse(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
       t => {

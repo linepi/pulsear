@@ -159,6 +159,8 @@ class WsDispatchType {
   static Server = new WsDispatchType(1, null);
   static Targets = new WsDispatchType(2, null);
   static BroadcastSameUser = new WsDispatchType(3, null);
+  static BroadcastExceptMe = new WsDispatchType(4, null);
+  static BroadcastSameUserExceptMe = new WsDispatchType(5, null);
   static withTargets = clients => {
     if (!Array.isArray(clients)) {
       throw new Error("users should be array");
@@ -205,6 +207,12 @@ class WsDispatchType {
       case 3:
         out_obj = "BroadcastSameUser";
         break;
+      case 4:
+        out_obj = "BroadcastExceptMe";
+        break;
+      case 5:
+        out_obj = "BroadcastSameUserExceptMe";
+        break;
       default:
         throw new Error("unexpected");
     }
@@ -215,7 +223,11 @@ class WsDispatchType {
     if (obj === "Broadcast") {
       return WsDispatchType.Broadcast;
     } else if (obj === "BroadcastSameUser") {
-      return WsDispatchType.Broadcast;
+      return WsDispatchType.BroadcastSameUser;
+    } else if (obj === "BroadcastExceptMe") {
+      return WsDispatchType.BroadcastExceptMe;
+    } else if (obj === "BroadcastSameUserExceptMe") {
+      return WsDispatchType.BroadcastSameUserExceptMe;
     } else if (obj === "Server") {
       return WsDispatchType.Server;
     } else if (typeof obj === "object" && obj !== null && obj.Targets) {
