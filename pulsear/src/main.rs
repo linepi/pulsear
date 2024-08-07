@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::io::Read;
+use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, RwLock};
 use std::time::*;
 
@@ -162,6 +163,10 @@ impl Time {
     Self(SystemTime::now())
   }
 
+  pub fn from(st: SystemTime) -> Self {
+    Self(st)
+  }
+
   pub fn milli(&self) -> u64 {
     let since_the_epoch = self
       .0
@@ -180,6 +185,12 @@ impl Time {
 
   pub fn system_time(&self) -> SystemTime {
     self.0
+  }
+
+  pub fn as_fmt(&self, fmt: &str) -> String {
+    use chrono::DateTime;
+    let datetime: DateTime<chrono::Local> = self.0.into();
+    format!("{}", datetime.format(fmt))
   }
 }
 
@@ -395,6 +406,95 @@ pub async fn resources(path: web::Path<String>) -> HttpResponse {
     e.to_string()
   });
   HttpResponse::Ok().body(res)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FileListElem {
+  name: String,
+  size: String,
+  create_t: String,
+  access_t: String,
+  modify_t: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FileList {
+  files: Vec<FileListElem>
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FileListRequest {
+  username: String,
+  token: String
+}
+
+pub fn do_get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<HttpResponse, Box<dyn std::error::Error>> {
+  let mut list = FileList {
+    files: vec![]
+  };
+  let sqlhandler = SqlHandler {
+    dbpool: data.dbpool.clone(),
+  };
+  let user = match sqlhandler.get_user_by_name(&param.username)? {
+    Some(u) => {
+      assert_eq!(&u.username, &param.username);
+      assert_eq!(&u.token, &param.token);
+      u
+    }
+    None => {
+      return Err(Box::from("user not exists"));
+    }
+  };
+
+  let storage = std::path::PathBuf::from("inner/storage");
+  let userfolder = storage.join(&user.username);
+  if !userfolder.exists() {
+    std::fs::create_dir_all(&userfolder)?;
+  }
+  let read_dir = std::fs::read_dir(userfolder)?;
+  for path in read_dir {
+    let entry = path?;
+    let name = entry.file_name().into_string().unwrap();
+    let size_in_bytes = entry.metadata()?.size();
+    let size: String = |bytes| -> String {
+      if bytes < 1024 {
+        return format!("{}b", bytes);
+      } else if bytes < 1024 * 1024 {
+        return format!("{:.1}Kb", bytes as f64 / 1024.0);
+      } else if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.3}Mb", bytes as f64 / 1024.0 / 1024.0);
+      } else {
+        return format!("{:.5}Gb", bytes as f64 / 1024.0 / 1024.0 / 1024.0);
+      }
+    } (size_in_bytes);
+    let create_t = Time::from(entry.metadata()?.created()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    let modify_t = Time::from(entry.metadata()?.modified()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    let access_t = Time::from(entry.metadata()?.accessed()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    let file_elem = FileListElem {
+      name,
+      size,
+      create_t,
+      modify_t,
+      access_t
+    };
+    list.files.push(file_elem);
+  }
+  Ok(HttpResponse::Ok().body(serde_json::to_string(&list).unwrap()))
+}
+
+#[post("/files")]
+pub async fn get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
+  log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
+  let resp: HttpResponse;
+  match do_get_files(param, data) {
+    Ok(response) => resp = response,
+    Err(e) => {
+      resp = HttpResponse::BadRequest().body(e.to_string());
+    }
+  }
+  log::debug!("Server get file resp with {:?}", resp);
+  resp 
 }
 
 pub fn do_login(
@@ -1194,6 +1294,7 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(resources)
         .service(login)
         .service(logout)
+        .service(get_files)
     })
     .bind_openssl(server_config.inner_addr, builder)?
     .workers(server_config.worker_num as usize)
@@ -1210,6 +1311,7 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(resources)
         .service(login)
         .service(logout)
+        .service(get_files)
     })
     .bind(server_config.inner_addr)?
     .workers(server_config.worker_num as usize)

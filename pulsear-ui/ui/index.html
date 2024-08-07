@@ -408,11 +408,11 @@
 
   .file-list {
     position: relative;
-    width: 90%;
+    width: 100%;
     border-collapse: collapse;
     box-shadow: var(--card-shadow);
     border-radius: 10px;
-    table-layout: fixed; 
+    table-layout: auto; 
     overflow-x: auto; 
   }
   .resize-handle {
@@ -432,6 +432,7 @@
     background-color: var(--file-table-head-bg-color);
     color: var(--file-table-head-color);
     overflow: hidden;  
+    border-bottom: 5px solid var(--background-color);
   }
   .file-list th:hover {
     background-color: var(--file-table-head-hover-color);
@@ -546,13 +547,14 @@
     <section v-else-if="data.tab === 'files'">
       <table class="file-list">
         <thead>
-            <!-- <tr>
+            <tr>
               <th>File Name<div class="resize-handle"></div></th>
-              <th>Type<div class="resize-handle"></div></th>
-              <th>Upload Date<div class="resize-handle"></div></th>
+              <th>Size<div class="resize-handle"></div></th>
+              <th>Create<div class="resize-handle"></div></th>
               <th>Last Modified<div class="resize-handle"></div></th>
-              <th>Actions</th>
-            </tr> -->
+              <th>Access<div class="resize-handle"></div></th>
+              <th>Action</th>
+            </tr>
         </thead>
         <tbody>
             <!-- <tr>
@@ -740,32 +742,31 @@
       },
       username: data.userCtx.username,
       token: data.userCtx.token,
-        config: {
-          id: 0,
-          theme: data.localConfig.theme
-        }
-      };
-      console.log("try logout with request ", logoutRequest);
-      fetch(data.api.logout, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=UTF-8'
-        },
-        body: JSON.stringify(logoutRequest)
-      }).then(response => {
-        if (!response.ok) {
-          console.error("logout bad response:", response);
-          data.loginCtx.alertMessage = "server response:" + response.statusText
-          throw new Error(data.loginCtx.alertMessage);
-        }
-        return response.json();
-      }).then(json => {
-        console.log('get logout response: ', json);
-        onLogout(json);
-      }).catch(error => {
-        console.error("logout error ", error);
-      })
-    }
+      config: {
+        id: 0,
+        theme: data.localConfig.theme
+      }
+    };
+    console.log("try logout with request ", logoutRequest);
+    fetch(data.api.logout, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8'
+      },
+      body: JSON.stringify(logoutRequest)
+    }).then(response => {
+      if (!response.ok) {
+        console.error("logout bad response:", response);
+        throw new Error(data.loginCtx.alertMessage);
+      }
+      return response.json();
+    }).then(json => {
+      console.log('get logout response: ', json);
+      onLogout(json);
+    }).catch(error => {
+      console.error("logout error ", error);
+    })
+  }
 
     function jsSetValue(varString, valueString) {
     const keys = varString.split('.');  
@@ -790,6 +791,57 @@
     }
   }
 
+  function loadFileList() {
+    if (!data.userCtx.login) return;
+    // add file list element
+    let tbody = document.querySelector('tbody');
+
+    fetch(data.api.getfile, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8'
+      },
+      body: JSON.stringify({
+        username: data.userCtx.username,
+        token: data.userCtx.token
+      })
+    }).then(response => {
+      if (!response.ok) {
+        console.error("get file bad response:", response);
+        throw new Error(response);
+      }
+      return response.json();
+    }).then(json => {
+      // struct FileListElem {
+      //   name: String,
+      //   size: String,
+      //   create_t: String,
+      //   access_t: String,
+      //   modify_t: String,
+      // }
+      json.files.forEach(fileElem => {
+        let tr = document.createElement('tr');
+        let td1 = document.createElement('td'); td1.innerHTML = fileElem.name;
+        let td2 = document.createElement('td'); td2.innerHTML = fileElem.size;
+        let td3 = document.createElement('td'); td3.innerHTML = fileElem.create_t;
+        let td4 = document.createElement('td'); td4.innerHTML = fileElem.access_t;
+        let td5 = document.createElement('td'); td5.innerHTML = fileElem.modify_t;
+        let td6 = document.createElement('td'); 
+        let button = document.createElement('button'); button.innerHTML = "Download";
+        td6.appendChild(button);
+        tr.appendChild(td1);
+        tr.appendChild(td2);
+        tr.appendChild(td3);
+        tr.appendChild(td4);
+        tr.appendChild(td5);
+        tr.appendChild(td6);
+        tbody.appendChild(tr);
+      });
+    }).catch(e => {
+      console.error("get file error ", e);
+    })
+  }
+
   function onLogin(response, isInit) {
     onResponseCode(response.code);
     // login success
@@ -809,6 +861,7 @@
 
     registerWs();
     data.uploader = new Uploader();
+    loadFileList();
   }
 
   function onLogout(response) {
@@ -918,6 +971,7 @@
     api: {
       login: prefix_ + "login",
       logout: prefix_ + "logout",
+      getfile: prefix_ + "files",
     },
     localConfig: {
       theme: "dark",
