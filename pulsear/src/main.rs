@@ -648,6 +648,7 @@ enum FileResponseStatus {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct FileResponse {
+  name: String,
   file_hash: String,
   slice_idx: u64,
   status: FileResponseStatus,
@@ -755,6 +756,7 @@ impl FileJob {
     self.user_ctx.session.as_ref().unwrap().do_send(WsMessage {
       sender: WsSender::Server,
       msg: WsMessageClass::FileResponse(FileResponse {
+        name: self.request.name.clone(),
         file_hash: self.request.file_hash.clone(),
         slice_idx: index,
         status

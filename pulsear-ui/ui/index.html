@@ -396,6 +396,7 @@
     --file-table-row-hover-color: #cadbe6;
     --file-table-row-bg-color: #def2ff;
     --file-table-row-color: var(--text-color);
+    --file-table-row-highlight-color: #ffb67f;
   }
   [data-theme="dark"] {
     --file-table-head-color: rgb(255, 255, 255);
@@ -404,6 +405,23 @@
     --file-table-row-hover-color: #868a78;
     --file-table-row-color: rgb(255, 255, 255);
     --file-table-row-bg-color: #303030;
+    --file-table-row-highlight-color: #ffb67f;
+  }
+
+  .highlight-new-file {
+    background-color: var(--file-table-row-highlight-color);
+    transition: background-color 2s; 
+  }
+  @keyframes rowFadeOut {
+    from {
+      background-color: var(--file-table-row-highlight-color);
+    }
+    to {
+      background-color: var(--file-table-row-bg-color);
+    }
+  }
+  .fadeOutAnimation {
+    animation: rowFadeOut 2s forwards; 
   }
 
   .file-list {
@@ -467,6 +485,7 @@
   </style>
   <script v-src="data.resources_prefix + 'ws.js'"></script>
   <script v-src="data.resources_prefix + 'uploader.js'"></script>
+  <script v-src="data.resources_prefix + 'color.js'"></script>
   <link v-href="data.resources_prefix + 'icon.css'" rel='stylesheet'>
 </head>
 <body>
@@ -800,8 +819,12 @@
     }
   }
 
-  function loadFileList() {
-    if (!data.userCtx.login) return;
+  function loadFileList(newFileName) {
+    if (!data.userCtx.login) {
+      console.log("load file with no login?");
+      return;
+    }
+    console.log("load file");
     // add file list element
     let tbody = document.querySelector('tbody');
     tbody.innerHTML = '';
@@ -840,7 +863,7 @@
         let actions = document.createElement('div'); 
         actions.className = "gg-software-download";
         actions.addEventListener('click', function(evt) {
-
+          
         });
 
         td6.appendChild(actions);
@@ -851,6 +874,16 @@
         tr.appendChild(td5);
         tr.appendChild(td6);
         tbody.appendChild(tr);
+
+        // if a new file appear in file list, highlight it
+        if (fileElem.name === newFileName) {
+          tr.childNodes.forEach(td => {
+            td.classList.add('highlight-new-file');
+            setTimeout(() => {
+              td.classList.add('fadeOutAnimation');
+            }, 0); 
+          });
+        }
       });
     }).catch(e => {
       console.error("get file error ", e);
@@ -894,6 +927,20 @@
 
   function onUserSettings() {
 
+  }
+
+  function onFileUploaded(filename) {
+    loadFileList(filename);
+    notify(false, `upload ${filename} success`);
+  }
+
+  function uploadFile(e) {
+    console.log('try upload');
+    if (e.target.files.length == 0) {
+      notify(false, "please retry");
+      return;
+    }
+    data.uploader.upload(e.target.files[0]);
   }
 
   function init(rawData) {
@@ -945,9 +992,7 @@
     })
 
     // init uploader
-    document.getElementById('upload').addEventListener('input', function(e) {
-      data.uploader.upload(e.target.files[0]);
-    });
+    document.getElementById('upload').addEventListener('change', uploadFile);
   }
 
   function onResponseCode(code) {

@@ -24,7 +24,8 @@ class Uploader {
     if (ws_message.msg.is(WsMessageClass.FileResponse)) {
       let resp = ws_message.msg.content;
       if (resp.status == "Finish") {
-        loadFileList();
+        onFileUploaded(resp.name);
+        delete(this.#files[resp.file_hash]);
       }
     }
   }

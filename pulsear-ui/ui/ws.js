@@ -475,7 +475,19 @@ function wssend(msg) {
   data.ws.socket.send(msg);
 }
 
-function onNotify(ws_message) {
+function notify(important, str) {
+  let notification_container = document.getElementsByClassName('notification-container')[0];
+  let newNode = document.createElement("div"); // anything is ok, it's only a tag
+  if (important) {
+    newNode.className = 'notification-important';
+  } else {
+    newNode.className = 'notification';
+  }
+  newNode.innerHTML = str;
+  notification_container.appendChild(newNode);
+}
+
+function onWsNotify(ws_message) {
   if (!(ws_message instanceof WsMessage)) {
     throw new Error("type is not true");
   }
@@ -492,17 +504,8 @@ function onNotify(ws_message) {
     sender = ws_message.sender.wsclient.username;
     important = true;
   }
-  let msg = ws_message.msg.content;
-
-  let notification_container = document.getElementsByClassName('notification-container')[0];
-  let newNode = document.createElement("div"); // anything is ok, it's only a tag
-  if (important) {
-    newNode.className = 'notification-important';
-  } else {
-    newNode.className = 'notification';
-  }
-  newNode.innerHTML = `${sender}: ${msg}`; 
-  notification_container.appendChild(newNode);
+  let msg = `${sender}: ${ws_message.msg.content}`;
+  notify(important, msg);
 }
 
 function registerWs() {
@@ -530,7 +533,7 @@ function registerWs() {
       console.log('json decode error from server!');
     }
     if (ws_message.msg.is(WsMessageClass.Notify)) {
-      onNotify(ws_message);
+      onWsNotify(ws_message);
     }
     if (ws_message.msg.is(WsMessageClass.Establish)) {
       data.userCtx.user_ctx_hash = ws_message.policy.wsClients[0].user_ctx_hash;
