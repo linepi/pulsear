@@ -20,30 +20,30 @@
     --popup-text-color: #333;
     --popup-h2-color: var(--header-background);
     --close-btn-color: #aaa;
-    --close-btn-hover-color: #007BFF;
-    --button-bg-color: #007BFF;
+    --close-btn-hover-color: var(--header-background);
+    --button-bg-color: var(--header-background);
     --button-bg-hover-color: #0056b3;
     --form-border-color: #ccc;
     --form-bg-color: #fff;
   }
 
   [data-theme="dark"] {
-    --background-color: #101010df;
+    --background-color: #101010;
     --text-color: #f4f4f4;
     --header-background: #1a1a1a;
-    --card-background: #4d4d4db2;
-    --card-shadow: 0 4px 8px rgba(255, 255, 255, 0.129);
-    --box-shadow: 0 10px 20px rgba(181, 181, 181, 0.2);
+    --card-background: #333;
+    --card-shadow: 0 4px 8px rgba(255, 255, 255, 0.12);
+    --box-shadow: var(--card-shadow);
     --link-color: #f4f4f4;
     --link-hover-color: #ffd900;
-    --popup-bg-color: #333;
-    --popup-text-color: #f4f4f4;
-    --popup-h2-color: var(--popup-text-color);
-    --close-btn-color: #f4f4f4;
+    --popup-bg-color: var(--card-background);
+    --popup-text-color: var(--text-color);
+    --popup-h2-color: var(--text-color);
+    --close-btn-color: var(--text-color);
     --close-btn-hover-color: #FFD700;
     --button-bg-color: #4e4c43;
     --button-bg-hover-color: #e6af00;
-    --form-border-color: #f4f4f4;
+    --form-border-color: #444;
     --form-bg-color: #444;
   }
 
@@ -388,6 +388,80 @@
       visibility: hidden;
     }
   }
+
+  :root {
+    --file-table-head-colorl: var(--text-color);
+    --file-table-head-bg-color: #76c8ff;
+    --file-table-head-hover-color: #68aedc;
+    --file-table-row-hover-color: #cadbe6;
+    --file-table-row-bg-color: #def2ff;
+    --file-table-row-color: var(--text-color);
+  }
+  [data-theme="dark"] {
+    --file-table-head-color: rgb(255, 255, 255);
+    --file-table-head-bg-color: #202116;
+    --file-table-head-hover-color: #6f754b;
+    --file-table-row-hover-color: #868a78;
+    --file-table-row-color: rgb(255, 255, 255);
+    --file-table-row-bg-color: #303030;
+  }
+
+  .file-list {
+    position: relative;
+    width: 90%;
+    border-collapse: collapse;
+    box-shadow: var(--card-shadow);
+    border-radius: 10px;
+    table-layout: fixed; 
+    overflow-x: auto; 
+  }
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 2px;
+    height: 100%;
+    cursor: col-resize;
+    background-color: #666; 
+  }
+  .file-list th {
+    position: relative;
+    padding: 8px 12px;
+    font-size: smaller;
+    text-align: left;
+    background-color: var(--file-table-head-bg-color);
+    color: var(--file-table-head-color);
+    overflow: hidden;  
+  }
+  .file-list th:hover {
+    background-color: var(--file-table-head-hover-color);
+    color: var(--file-table-head-color);
+  }
+
+  .file-list td {
+    padding: 2px 12px;
+    font-size: smaller;
+    text-align: left;
+    background-color: var(--file-table-row-bg-color);
+    color: var(--file-table-row-color);
+    overflow: hidden;  
+  }
+  .file-list tbody tr:hover td {
+    background-color: var(--file-table-row-hover-color); 
+  }
+
+  .button {
+    padding: 3px 4px;
+    background-color: var(--button-bg-color);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  .button:hover {
+    background-color: var(--button-bg-hover-color);
+  }
   </style>
   <script v-src="data.resources_prefix + 'ws.js'"></script>
   <script v-src="data.resources_prefix + 'uploader.js'"></script>
@@ -470,7 +544,26 @@
       <p>Select a section from the navigation menu to get started.</p>
     </section>
     <section v-else-if="data.tab === 'files'">
-      <h1>Files</h1>
+      <table class="file-list">
+        <thead>
+            <!-- <tr>
+              <th>File Name<div class="resize-handle"></div></th>
+              <th>Type<div class="resize-handle"></div></th>
+              <th>Upload Date<div class="resize-handle"></div></th>
+              <th>Last Modified<div class="resize-handle"></div></th>
+              <th>Actions</th>
+            </tr> -->
+        </thead>
+        <tbody>
+            <!-- <tr>
+                <td><i class="fa fa-file-alt file-icon"></i> Report.docx</td>
+                <td>Document</td>
+                <td>2023-08-07</td>
+                <td>2023-08-07</td>
+                <td><button class="button">Download</button></td>
+            </tr> -->
+        </tbody>
+      </table>
       <input id="input_file" type="file" v-show="true">
     </section>
 
@@ -478,14 +571,6 @@
   </main>
 </body>
 <script>
-  function uploadFile() {
-
-  }
-
-  function downloadFile() {
-
-  }
-
   function observe(data) {
     if (typeof data !== 'object' || data === null) {
       return data;
@@ -749,12 +834,48 @@
     var userMenuWrapper = document.querySelector('.user-menu-wrapper');
     document.addEventListener('click', evt => {
       if (!userMenuWrapper.contains(event.target) && !userMenu.contains(event.target)) {
-        console.log("close userMenu");
         data.userCtx.userMenu = false;
       }
     });
     loadLocalConfig(rawData);
     walkDom(document.documentElement, doRegisterListeners)
+
+    // init file list
+    const handles = document.querySelectorAll('.resize-handle');
+    let leftTh, rightTh, startX, leftStartW, rightStartW;
+    handles.forEach(handle => {
+      let col = handle.parentElement;
+      let x = 0;
+      let w = 0;
+      const mouseDownHandler = function (e) {
+        // Get the current mouse position
+        x = e.clientX;
+
+        // Calculate the current width of column
+        const styles = window.getComputedStyle(col);
+        w = parseInt(styles.width, 10);
+
+        // Attach listeners for document's events
+        document.addEventListener('mousemove', mouseMoveHandler);
+        document.addEventListener('mouseup', mouseUpHandler);
+      };
+
+      const mouseMoveHandler = function (e) {
+        // Determine how far the mouse has been moved
+        const dx = e.clientX - x;
+
+        // Update the width of column
+        col.style.width = `${w + dx}px`;
+      };
+
+      // When user releases the mouse, remove the existing event listeners
+      const mouseUpHandler = function () {
+        document.removeEventListener('mousemove', mouseMoveHandler);
+        document.removeEventListener('mouseup', mouseUpHandler);
+      };
+
+      handle.addEventListener('mousedown', mouseDownHandler);
+    })
   }
 
   function onResponseCode(code) {
@@ -854,11 +975,5 @@
       }
     }
   };
-</script>
-<script>
-  const nameInput = document.getElementById("input_file");
-  nameInput.addEventListener("input", () => {
-    data.uploader.upload(nameInput.files[0]);
-  })
 </script>
 </html>
