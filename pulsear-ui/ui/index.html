@@ -485,7 +485,6 @@
   </style>
   <script v-src="data.resources_prefix + 'ws.js'"></script>
   <script v-src="data.resources_prefix + 'uploader.js'"></script>
-  <script v-src="data.resources_prefix + 'color.js'"></script>
   <link v-href="data.resources_prefix + 'icon.css'" rel='stylesheet'>
 </head>
 <body>
@@ -863,7 +862,7 @@
         let actions = document.createElement('div'); 
         actions.className = "gg-software-download";
         actions.addEventListener('click', function(evt) {
-          
+          downloadFile(fileElem.name);
         });
 
         td6.appendChild(actions);
@@ -941,6 +940,31 @@
       return;
     }
     data.uploader.upload(e.target.files[0]);
+  }
+
+  // filename: String
+  function downloadFile(filename) {
+    fetch(data.api.getdownloadurl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8'
+      },
+      body: JSON.stringify({
+        name: filename,
+        username: data.userCtx.username,
+        token: data.userCtx.token
+      })
+    }).then(response => {
+      if (!response.ok) {
+        console.error("get file bad response:", response);
+        throw new Error(response);
+      }
+      response.text().then(text => {
+        window.location = data.api.downloadbyurl + `/${data.userCtx.username}/${text}`;
+      });
+    }).catch(e => {
+      console.error(e);
+    })
   }
 
   function init(rawData) {
@@ -1036,6 +1060,8 @@
       login: prefix_ + "login",
       logout: prefix_ + "logout",
       getfile: prefix_ + "files",
+      getdownloadurl: prefix_ + "get_download_url",
+      downloadbyurl: prefix_ + "download",
     },
     localConfig: {
       theme: "dark",

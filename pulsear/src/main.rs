@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use actix_web::{get, post, web, App, HttpRequest, HttpResponse, HttpServer};
+use actix_files::NamedFile;
 use actix_web_actors::ws;
 use bytes::Buf;
 use mysql::params;
@@ -481,6 +482,75 @@ pub fn do_get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Serve
   Ok(HttpResponse::Ok().body(serde_json::to_string(&list).unwrap()))
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DownloadRequest {
+  name: String,
+  username: String,
+  token: String
+}
+#[post("/download_raw")]
+pub async fn download_raw(param: web::Json<DownloadRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<NamedFile, Box<dyn std::error::Error>> {
+  let sqlhandler = SqlHandler {
+    dbpool: data.dbpool.clone(),
+  };
+  match sqlhandler.get_user_by_name(&param.username)? {
+    Some(u) => {
+      assert_eq!(&u.username, &param.username);
+      assert_eq!(&u.token, &param.token);
+    }
+    None => {
+      return Err(Box::from("user not exists"));
+    }
+  };
+  let storage = std::path::PathBuf::from("inner/storage");
+  let userfile_path = storage.join(&param.username).join(&param.name);
+  Ok(NamedFile::open(userfile_path)?)
+}
+
+#[post("/get_download_url")]
+pub async fn get_download_url(param: web::Json<DownloadRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<HttpResponse, Box<dyn std::error::Error>> {
+  let sqlhandler = SqlHandler {
+    dbpool: data.dbpool.clone(),
+  };
+  match sqlhandler.get_user_by_name(&param.username)? {
+    Some(u) => {
+      assert_eq!(&u.username, &param.username);
+      assert_eq!(&u.token, &param.token);
+    }
+    None => {
+      return Err(Box::from("user not exists"));
+    }
+  };
+  let code = data.file_handler.gen_download_code(param.into_inner());
+  Ok(HttpResponse::Ok().body(code))
+}
+
+#[get("/download/{username}/{code}")]
+pub async fn download_by_url(p: web::Path<(String, String)>, data: web::Data<Arc<Server>>) 
+  -> Result<NamedFile, Box<dyn std::error::Error>> {
+  log::info!("download by url: download/{}/{}", p.as_ref().0, p.as_ref().1);
+  let param: (String, String) = p.into_inner();
+  let username = param.0;
+  let code = param.1;
+  let filename = match data.file_handler.from_download_code(&code) {
+    Some(p) => {
+      if username != p.0 {
+        return Err(Box::from("unexpected"));
+      }
+      p.1
+    },
+    None => {
+      return Err(Box::from("unexpected"));
+    }
+  };
+  let storage = std::path::PathBuf::from("inner/storage");
+  let userfile_path = storage.join(&username).join(&filename);
+  Ok(NamedFile::open(userfile_path)?)
+}
+
+
 #[post("/files")]
 pub async fn get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
   log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
@@ -769,6 +839,8 @@ impl FileJob {
 pub struct FileHandler {
   workers: Vec<FileWorker>,
   requests: RwLock<HashMap<String, FileJob>>,
+  // username, filename
+  codes: RwLock<HashMap<String, (String, String)>>,
 }
 
 impl FileHandler {
@@ -776,6 +848,7 @@ impl FileHandler {
     Self { 
       workers: vec![],
       requests: RwLock::new(HashMap::new()),
+      codes: RwLock::new(HashMap::new()),
     }
   }
 
@@ -793,7 +866,7 @@ impl FileHandler {
 
     let mut request = self.requests.write().unwrap();
     let job = request.get_mut(&hashstr).unwrap();
-    use std::io::{self, Seek, SeekFrom, Write};
+    use std::io::{Seek, SeekFrom, Write};
 
     let index: u64 = bytes.slice(32..36).get_u32_le() as u64;
     log::info!("write index {}", index);
@@ -802,6 +875,21 @@ impl FileHandler {
     job.file.seek(SeekFrom::Start(slice_size*index)).unwrap();
     job.file.write_all(&bytes.slice(36..)).unwrap();
     job.on_slice_send(index);
+  }
+
+  fn gen_download_code(&self, req: DownloadRequest) -> String {
+    let code = sha256::digest(serde_json::to_string(&req).unwrap() + format!("{}", Time::now()).as_str());
+    let mut codes = self.codes.write().unwrap();
+    assert!(codes.insert(code.clone(), (req.username, req.name)).is_none());
+    code
+  }
+
+  fn from_download_code(&self, code: &String) -> Option<(String, String)> {
+    let codes = self.codes.read().unwrap();
+    match codes.get(code) {
+      Some(p) => Some((p.0.clone(), p.1.clone())),
+      None => None
+    }
   }
 }
 
@@ -1322,6 +1410,9 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(login)
         .service(logout)
         .service(get_files)
+        .service(download_raw)
+        .service(get_download_url)
+        .service(download_by_url)
     })
     .bind_openssl(server_config.inner_addr, builder)?
     .workers(server_config.worker_num as usize)
@@ -1339,6 +1430,9 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(login)
         .service(logout)
         .service(get_files)
+        .service(download_raw)
+        .service(get_download_url)
+        .service(download_by_url)
     })
     .bind(server_config.inner_addr)?
     .workers(server_config.worker_num as usize)
