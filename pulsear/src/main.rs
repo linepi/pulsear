@@ -16,6 +16,8 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, RwLock};
 use std::time::*;
 
+type Err = Box<dyn std::error::Error>;
+
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub enum ResponseCode {
   #[default]
@@ -229,7 +231,7 @@ struct SqlHandler {
 impl SqlHandler {
   /// prerequisity: user_config table created
   /// returned users: with all field filled
-  fn get_users(&self) -> Result<Vec<User>, Box<dyn std::error::Error>> {
+  fn get_users(&self) -> Result<Vec<User>, Err> {
     let mut dbconn = self.dbpool.get_conn()?;
     let mut users: Vec<User> = vec![];
     dbconn.query_map(
@@ -258,7 +260,7 @@ impl SqlHandler {
   fn get_user_by_name(
     &self,
     username: &String,
-  ) -> Result<Option<User>, Box<dyn std::error::Error>> {
+  ) -> Result<Option<User>, Err> {
     let mut dbconn = self.dbpool.get_conn()?;
     let stmt = dbconn.prep(
       r"SELECT user.id, username, token, theme, user_config.id 
@@ -288,7 +290,7 @@ impl SqlHandler {
 
   /// user: username, token, config
   /// returned user: id, ..., config_id
-  fn add_user(&self, user: &User) -> Result<Option<User>, Box<dyn std::error::Error>> {
+  fn add_user(&self, user: &User) -> Result<Option<User>, Err> {
     match self.get_user_by_name(&user.username)? {
       Some(u) => return Err(Box::from(format!("user exists: {:?}", u))),
       None => (),
@@ -323,7 +325,7 @@ impl SqlHandler {
     self.get_user_by_name(&user.username)
   }
 
-  fn delete_user_by_name(&self, username: &String) -> Result<(), Box<dyn std::error::Error>> {
+  fn delete_user_by_name(&self, username: &String) -> Result<(), Err> {
     match self.get_user_by_name(username)? {
       Some(u) => log::info!("delete user[{:?}]", u),
       None => return Err(Box::from(format!("user does not exist: {}", username))),
@@ -351,7 +353,7 @@ impl SqlHandler {
     &self,
     username: &String,
     config: &UserConfig,
-  ) -> Result<(), Box<dyn std::error::Error>> {
+  ) -> Result<(), Err> {
     match self.get_user_by_name(username)? {
       Some(u) => log::info!("update user[{:?}]'s config as {:?}", u, config),
       None => return Err(Box::from(format!("user does not exist: {}", username))),
@@ -369,7 +371,7 @@ impl SqlHandler {
   }
 
   /// change last login time
-  fn user_login(&self, username: &String) -> Result<(), Box<dyn std::error::Error>> {
+  fn user_login(&self, username: &String) -> Result<(), Err> {
     match self.get_user_by_name(username)? {
       Some(u) => log::info!("update user[{:?}]'s login time", u),
       None => return Err(Box::from(format!("user does not exist: {}", username))),
@@ -416,6 +418,55 @@ struct FileListElem {
   modify_t: String,
 }
 
+impl FileListElem {
+  fn from_name_and_metadata(name: String, metadata: std::fs::Metadata) 
+    -> Result<Self, Err> {
+    let size_in_bytes = metadata.size();
+    let size: String = |bytes| -> String {
+      if bytes < 1024 {
+        return format!("{}b", bytes);
+      } else if bytes < 1024 * 1024 {
+        return format!("{:.1}Kb", bytes as f64 / 1024.0);
+      } else if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.3}Mb", bytes as f64 / 1024.0 / 1024.0);
+      } else {
+        return format!("{:.5}Gb", bytes as f64 / 1024.0 / 1024.0 / 1024.0);
+      }
+    } (size_in_bytes);
+    let create_t = Time::from(metadata.created()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    let modify_t = Time::from(metadata.modified()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    let access_t = Time::from(metadata.accessed()?).as_fmt("%Y-%m-%d %H:%M:%S");
+    Ok(Self {
+      name,
+      size,
+      create_t,
+      modify_t,
+      access_t
+    })
+  }
+
+  fn from(username: String, filename: String, size: u64) 
+    -> Result<Self, Err> {
+    let storage = std::path::PathBuf::from("inner/storage");
+    let userfile = storage.join(&username).join(&filename);
+    let file = std::fs::File::open(userfile)?;
+    let mut file_elem = FileListElem::from_name_and_metadata(filename, file.metadata()?)?;
+    let size: String = |bytes| -> String {
+      if bytes < 1024 {
+        return format!("{}b", bytes);
+      } else if bytes < 1024 * 1024 {
+        return format!("{:.1}Kb", bytes as f64 / 1024.0);
+      } else if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.3}Mb", bytes as f64 / 1024.0 / 1024.0);
+      } else {
+        return format!("{:.5}Gb", bytes as f64 / 1024.0 / 1024.0 / 1024.0);
+      }
+    } (size);
+    file_elem.size = size;
+    Ok(file_elem)
+  }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct FileList {
   files: Vec<FileListElem>
@@ -427,8 +478,15 @@ pub struct FileListRequest {
   token: String
 }
 
-pub fn do_get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) 
-  -> Result<HttpResponse, Box<dyn std::error::Error>> {
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct FileElemRequest {
+  name: String,
+  username: String,
+  token: String
+}
+
+pub fn do_get_file_list(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<HttpResponse, Err> {
   let mut list = FileList {
     files: vec![]
   };
@@ -454,30 +512,10 @@ pub fn do_get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Serve
   let read_dir = std::fs::read_dir(userfolder)?;
   for path in read_dir {
     let entry = path?;
-    let name = entry.file_name().into_string().unwrap();
-    let size_in_bytes = entry.metadata()?.size();
-    let size: String = |bytes| -> String {
-      if bytes < 1024 {
-        return format!("{}b", bytes);
-      } else if bytes < 1024 * 1024 {
-        return format!("{:.1}Kb", bytes as f64 / 1024.0);
-      } else if bytes < 1024 * 1024 * 1024 {
-        return format!("{:.3}Mb", bytes as f64 / 1024.0 / 1024.0);
-      } else {
-        return format!("{:.5}Gb", bytes as f64 / 1024.0 / 1024.0 / 1024.0);
-      }
-    } (size_in_bytes);
-    let create_t = Time::from(entry.metadata()?.created()?).as_fmt("%Y-%m-%d %H:%M:%S");
-    let modify_t = Time::from(entry.metadata()?.modified()?).as_fmt("%Y-%m-%d %H:%M:%S");
-    let access_t = Time::from(entry.metadata()?.accessed()?).as_fmt("%Y-%m-%d %H:%M:%S");
-    let file_elem = FileListElem {
-      name,
-      size,
-      create_t,
-      modify_t,
-      access_t
-    };
-    list.files.push(file_elem);
+    list.files.push(FileListElem::from_name_and_metadata(
+      entry.file_name().into_string().unwrap(), 
+      entry.metadata()?
+    )?);
   }
   Ok(HttpResponse::Ok().body(serde_json::to_string(&list).unwrap()))
 }
@@ -490,7 +528,7 @@ struct DownloadRequest {
 }
 #[post("/download_raw")]
 pub async fn download_raw(param: web::Json<DownloadRequest>, data: web::Data<Arc<Server>>) 
-  -> Result<NamedFile, Box<dyn std::error::Error>> {
+  -> Result<NamedFile, Err> {
   let sqlhandler = SqlHandler {
     dbpool: data.dbpool.clone(),
   };
@@ -510,7 +548,7 @@ pub async fn download_raw(param: web::Json<DownloadRequest>, data: web::Data<Arc
 
 #[post("/get_download_url")]
 pub async fn get_download_url(param: web::Json<DownloadRequest>, data: web::Data<Arc<Server>>) 
-  -> Result<HttpResponse, Box<dyn std::error::Error>> {
+  -> Result<HttpResponse, Err> {
   let sqlhandler = SqlHandler {
     dbpool: data.dbpool.clone(),
   };
@@ -529,7 +567,7 @@ pub async fn get_download_url(param: web::Json<DownloadRequest>, data: web::Data
 
 #[get("/download/{username}/{code}")]
 pub async fn download_by_url(p: web::Path<(String, String)>, data: web::Data<Arc<Server>>) 
-  -> Result<NamedFile, Box<dyn std::error::Error>> {
+  -> Result<NamedFile, Err> {
   log::info!("download by url: download/{}/{}", p.as_ref().0, p.as_ref().1);
   let param: (String, String) = p.into_inner();
   let username = param.0;
@@ -552,10 +590,10 @@ pub async fn download_by_url(p: web::Path<(String, String)>, data: web::Data<Arc
 
 
 #[post("/files")]
-pub async fn get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
+pub async fn get_file_list(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
   log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
   let resp: HttpResponse;
-  match do_get_files(param, data) {
+  match do_get_file_list(param, data) {
     Ok(response) => resp = response,
     Err(e) => {
       resp = HttpResponse::BadRequest().body(e.to_string());
@@ -565,10 +603,36 @@ pub async fn get_files(param: web::Json<FileListRequest>, data: web::Data<Arc<Se
   resp 
 }
 
+#[post("/file")]
+pub async fn get_file_elem(param: web::Json<FileElemRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<HttpResponse, Err> {
+  log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
+  let sqlhandler = SqlHandler {
+    dbpool: data.dbpool.clone(),
+  };
+  let user = match sqlhandler.get_user_by_name(&param.username)? {
+    Some(u) => {
+      assert_eq!(&u.username, &param.username);
+      assert_eq!(&u.token, &param.token);
+      u
+    }
+    None => {
+      return Err(Box::from("user not exists"));
+    }
+  };
+
+  let storage = std::path::PathBuf::from("inner/storage");
+  let userfile = storage.join(&user.username).join(&param.name);
+  let file = std::fs::File::open(userfile)?;
+  Ok(HttpResponse::Ok().body(serde_json::to_string(
+    &FileListElem::from_name_and_metadata(param.into_inner().name, file.metadata()?)?
+  )?))
+}
+
 pub fn do_login(
   param: &web::Json<LoginRequest>,
   data: &web::Data<Arc<Server>>,
-) -> Result<LoginResponse, Box<dyn std::error::Error>> {
+) -> Result<LoginResponse, Err> {
   log::info!("user try login: {}", serde_json::to_string(param).unwrap());
   let sqlhandler = SqlHandler {
     dbpool: data.dbpool.clone(),
@@ -634,7 +698,7 @@ pub async fn login(param: web::Json<LoginRequest>, data: web::Data<Arc<Server>>)
 pub fn do_logout(
   param: &web::Json<LogoutRequest>,
   data: &web::Data<Arc<Server>>,
-) -> Result<LogoutResponse, Box<dyn std::error::Error>> {
+) -> Result<LogoutResponse, Err> {
   log::info!(
     "user try logout: {}",
     serde_json::to_string(&param).unwrap()
@@ -698,7 +762,7 @@ impl WsClient {
 // binary package:
 //  bytes:   |   32      |  4        |  slice_size  |
 //  meaning: |  file_hash| slice_idx | file content |
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 struct FileRequest {
   username: String,
   name: String,
@@ -738,11 +802,19 @@ struct HeartBeat {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+struct FileSendableResponse {
+  file_elem: Option<FileListElem>,
+  req: FileRequest,
+  hashval: String,
+  user_ctx_hash: String
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 enum WsMessageClass {
   HEARTBEAT(HeartBeat),
   Establish,                  // two direction
   Leave,                      // on logout
-  FileSendable((String, bool)),       // come out
+  FileSendable(FileSendableResponse), // come out
   FileResponse(FileResponse), // come out
   FileRequest(FileRequest),   // come in
   Text(String),               // two direction
@@ -807,35 +879,33 @@ struct FileJob {
 }
 
 impl FileJob {
-  fn new(req: FileRequest, user_ctx: UserCtx) -> Self {
+  fn new(req: FileRequest, user_ctx: UserCtx) -> Result<Self, Err> {
     let storage = std::path::PathBuf::from("inner/storage");
     let userfolder = storage.join(&req.username);
     if !userfolder.exists() {
-      std::fs::create_dir_all(&userfolder).expect("should create dir successfully");
+      std::fs::create_dir_all(&userfolder)?;
     }
     let filepath = userfolder.join(&req.name);
     let f = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(filepath).unwrap();
-    Self {
+        .open(filepath)?;
+    Ok(Self {
       request: req,
       file: f,
       user_ctx
-    }
+    })
   }
 
   fn on_slice_send(&self, index: u64) {
     let status: FileResponseStatus;
-    let policy: WsDispatchType;
+    let policy = WsDispatchType::BroadcastSameUser;
     // the last index
     if index == (self.request.size - 1) / self.request.slice_size {
       status = FileResponseStatus::Finish;
-      policy = WsDispatchType::BroadcastSameUser;
     } else {
       status = FileResponseStatus::Ok;
-      policy = WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]);
     }
     self.user_ctx.session.as_ref().unwrap().do_send(WsMessage {
       sender: WsSender::Server,
@@ -868,7 +938,14 @@ impl FileHandler {
 
   fn add(&self, req: FileRequest, user_ctx: UserCtx) -> bool {
     let mut requests = self.requests.write().unwrap();
-    requests.insert(req.file_hash.clone(), FileJob::new(req, user_ctx));
+    let job = match FileJob::new(req.clone(), user_ctx) {
+      Ok(j) => j,
+      Err(_) => {
+        log::error!("add file error");
+        return false;
+      }
+    };
+    requests.insert(req.file_hash, job);
     true
   }
 
@@ -1073,7 +1150,7 @@ impl Handler<WsMessageInner> for WsSession {
           ctx.address().do_send(WsMessage {
             sender: WsSender::Manager(WsClient::new(&self.user_ctx)),
             msg: WsMessageClass::Notify("Enter the site!".into()),
-            policy: WsDispatchType::Broadcast,
+            policy: WsDispatchType::BroadcastExceptMe,
           });
         }
         // user login will broadcast to all clients with same user
@@ -1107,7 +1184,7 @@ impl Handler<WsMessageInner> for WsSession {
           ctx.address().do_send(WsMessage {
             sender: WsSender::Manager(WsClient::new(&self.user_ctx)),
             msg: WsMessageClass::Notify("Leave the site!".into()),
-            policy: WsDispatchType::Broadcast,
+            policy: WsDispatchType::BroadcastExceptMe,
           });
         }
         // user login will broadcast to all clients with same user
@@ -1130,16 +1207,28 @@ impl Handler<WsMessageInner> for WsSession {
         ));
       }
       WsMessageClass::FileRequest(pkg) => {
-        ctx.address().do_send(WsTextMessage(
-          serde_json::to_string(&WsMessage {
-            sender: WsSender::Server,
-            msg: WsMessageClass::FileSendable((pkg.file_hash.clone(), 
-              self.server.file_handler.add(pkg, self.user_ctx.clone()))
-            ),
-            policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
-          })
-          .unwrap(),
-        ));
+        let can = self.server.file_handler.add(pkg.clone(), self.user_ctx.clone());
+        let mut file_sendable_resp = FileSendableResponse {
+          file_elem: None,
+          hashval: pkg.file_hash.clone(),
+          req: pkg.clone(),
+          user_ctx_hash: self.user_ctx.hash()
+        };
+        if can {
+          match FileListElem::from(pkg.username, pkg.name, pkg.size) {
+            Ok(file_elem) => {
+              file_sendable_resp.file_elem = Some(file_elem);
+            }
+            Err(e) => {
+              log::error!("get file elem error: {}", e.to_string());
+            }
+          };
+        }
+        ctx.address().do_send(WsMessage {
+          sender: WsSender::Server,
+          msg: WsMessageClass::FileSendable(file_sendable_resp),
+          policy: WsDispatchType::BroadcastSameUser,
+        });
       }
       WsMessageClass::Text(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
@@ -1151,6 +1240,9 @@ impl Handler<WsMessageInner> for WsSession {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
       WsMessageClass::FileResponse(_) => {
+        ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
+      }
+      WsMessageClass::FileSendable(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
       t => {
@@ -1423,7 +1515,8 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(resources)
         .service(login)
         .service(logout)
-        .service(get_files)
+        .service(get_file_elem)
+        .service(get_file_list)
         .service(download_raw)
         .service(get_download_url)
         .service(download_by_url)
@@ -1443,7 +1536,8 @@ async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Result<
         .service(resources)
         .service(login)
         .service(logout)
-        .service(get_files)
+        .service(get_file_elem)
+        .service(get_file_list)
         .service(download_raw)
         .service(get_download_url)
         .service(download_by_url)
@@ -1478,7 +1572,7 @@ mod tests {
   use std::collections::HashSet;
 
   #[test]
-  fn mysql_conn() -> std::result::Result<(), Box<dyn std::error::Error>> {
+  fn mysql_conn() -> std::result::Result<(), Err> {
     if let Ok(url) = std::env::var("PULSEAR_DATABASE_URL") {
       let pool = mysql::Pool::new(url.as_str())?;
       let _ = pool.get_conn()?;
@@ -1489,7 +1583,7 @@ mod tests {
   }
 
   #[test]
-  fn basic_test() -> std::result::Result<(), Box<dyn std::error::Error>> {
+  fn basic_test() -> std::result::Result<(), Err> {
     let set = HashSet::from([1, 3, 21]);
     let content: Vec<&i32> = set.iter().collect();
     assert!(content.contains(&&1));
@@ -1503,7 +1597,7 @@ mod tests {
   }
 
   #[test]
-  fn sqlhandler() -> Result<(), Box<dyn std::error::Error>> {
+  fn sqlhandler() -> Result<(), Err> {
     if let Ok(url) = std::env::var("PULSEAR_DATABASE_URL") {
       let handler = SqlHandler {
         dbpool: mysql::Pool::new(url.as_str())?,

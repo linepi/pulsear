@@ -471,7 +471,7 @@ class WsMessage {
 }
 
 function wssend(msg) {
-  console.log("ws send: ", msg);
+  // console.log("ws send: ", msg);
   data.ws.socket.send(msg);
 }
 
@@ -527,7 +527,7 @@ function registerWs() {
   }
 
   data.ws.socket.onmessage = evt => {
-    console.log('Ws received: ' + evt.data);
+    // console.log('Ws received: ' + evt.data);
     let ws_message = WsMessage.fromJson(evt.data);
     if (ws_message.msg.is(WsMessageClass.Errjson)) {
       console.log('json decode error from server!');

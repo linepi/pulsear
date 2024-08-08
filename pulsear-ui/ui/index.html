@@ -288,16 +288,6 @@
     font-size: 14px;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes slideIn {
-    from { transform: translateY(-50px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-
   .user-menu {
     position: absolute;
     list-style: none;
@@ -389,6 +379,11 @@
     }
   }
 
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
   @keyframes fadeOut {
     from {
       opacity: 1;
@@ -400,22 +395,25 @@
   }
 
   :root {
-    --file-table-head-colorl: var(--text-color);
+    --file-table-head-color: var(--text-color);
     --file-table-head-bg-color: #76c8ff;
     --file-table-head-hover-color: #68aedc;
     --file-table-row-hover-color: #cadbe6;
     --file-table-row-bg-color: #def2ff;
     --file-table-row-color: var(--text-color);
     --file-table-row-highlight-color: #ffb67f;
+    --file-table-row-overlay-text-color: var(--file-table-row-highlight-color);
+    --file-table-row-overlay-start-bg-color: #212427;
   }
   [data-theme="dark"] {
-    --file-table-head-color: rgb(255, 255, 255);
+    --file-table-head-color: var(--text-color);
     --file-table-head-bg-color: #202116;
     --file-table-head-hover-color: #6f754b;
     --file-table-row-hover-color: #868a78;
-    --file-table-row-color: rgb(255, 255, 255);
+    --file-table-row-color: var(--text-color);
     --file-table-row-bg-color: #303030;
     --file-table-row-highlight-color: #ffb67f;
+    --file-table-row-overlay-text-color: #dae8f293;
   }
 
   .highlight-new-file {
@@ -437,11 +435,13 @@
   .file-list {
     position: relative;
     width: 80%;
-    border-collapse: collapse;
     box-shadow: var(--card-shadow);
-    border-radius: 10px;
     table-layout: auto; 
     margin: 10px auto 0 2vw;
+    border-collapse: separate; 
+    border-spacing: 0; 
+    border-radius: 10px; 
+    overflow: hidden; 
   }
   .file-list th {
     position: relative;
@@ -459,6 +459,7 @@
   }
 
   .file-list td {
+    position: relative;
     padding: 3px 14px;
     font-size: smaller;
     text-align: left;
@@ -467,6 +468,18 @@
   }
   .file-list tbody tr:hover td {
     background-color: var(--file-table-row-hover-color); 
+  }
+  .file-list td .td-overlay {
+    display: flex; 
+    position: absolute; 
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--file-table-row-overlay-text-color);       
+    background: var(--file-table-row-overlay-start-bg-color); 
+    align-items: center;
+    justify-content: center;
   }
 
   .resize-handle {
@@ -629,7 +642,7 @@
     </section>
     <section v-else-if="data.tab === 'files'" @dragover="onDragOver" @drop="onDrop">
       <div class="gg-software-upload" 
-           style="margin-left:2.5vw"
+           style="margin-left:3vw"
            @click="document.getElementById('upload').click()"></div>
       <table class="file-list">
         <thead><tr>
@@ -667,7 +680,7 @@
         </tr></thead>
         <tbody>
             <!-- <tr>
-                <td><i class="fa fa-file-alt file-icon"></i> Report.docx</td>
+                <td>Report.docx<dev class="??"></dev></td>
                 <td>Document</td>
                 <td>2023-08-07</td>
                 <td>2023-08-07</td>
@@ -947,6 +960,60 @@
     });
   }
 
+  // 
+  function createFileRowElem(fileElem) {
+    let tr = document.createElement('tr');
+    let td1 = document.createElement('td'); td1.innerHTML = fileElem.name; td1.setAttribute('data-key', 'name');
+    let td2 = document.createElement('td'); td2.innerHTML = fileElem.size; td2.setAttribute('data-key', 'size');
+    let td3 = document.createElement('td'); td3.innerHTML = fileElem.create_t; td3.setAttribute('data-key', 'create_t');
+    let td4 = document.createElement('td'); td4.innerHTML = fileElem.modify_t; td4.setAttribute('data-key', 'modify_t');
+    let td5 = document.createElement('td'); td5.innerHTML = fileElem.access_t; td5.setAttribute('data-key', 'access_t');
+
+    let td6 = document.createElement('td'); 
+    let actions = document.createElement('div'); 
+    actions.className = "gg-software-download";
+    actions.addEventListener('click', function(evt) {
+      downloadFile(fileElem.name);
+    });
+
+    td6.appendChild(actions);
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    tr.appendChild(td3);
+    tr.appendChild(td4);
+    tr.appendChild(td5);
+    tr.appendChild(td6);
+    return tr;
+  }
+
+  // 
+  function getFileElem(newFileName) {
+    let newFileElem = null;
+    fetch(data.api.getfileelem, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8'
+      },
+      body: JSON.stringify({
+        name: newFileName,
+        username: data.userCtx.username,
+        token: data.userCtx.token
+      })
+    }).then(response => {
+      if (!response.ok) {
+        console.error("get file bad response:", response);
+        throw new Error(response);
+      }
+      return response.json();
+    }).then(json => {
+      newFileElem = json; 
+    }).catch(e => {
+      console.error("get file error ", e);
+      return null;
+    })
+    return newFileElem;
+  }
+
   function loadFileList(newFileName) {
     if (!data.userCtx.login) {
       console.log("load file with no login?");
@@ -991,27 +1058,7 @@
           }
       });
       json.files.forEach(fileElem => {
-        let tr = document.createElement('tr');
-        let td1 = document.createElement('td'); td1.innerHTML = fileElem.name; td1.setAttribute('data-key', 'name');
-        let td2 = document.createElement('td'); td2.innerHTML = fileElem.size; td2.setAttribute('data-key', 'size');
-        let td3 = document.createElement('td'); td3.innerHTML = fileElem.create_t; td3.setAttribute('data-key', 'create_t');
-        let td4 = document.createElement('td'); td4.innerHTML = fileElem.modify_t; td4.setAttribute('data-key', 'modify_t');
-        let td5 = document.createElement('td'); td5.innerHTML = fileElem.access_t; td5.setAttribute('data-key', 'access_t');
-
-        let td6 = document.createElement('td'); 
-        let actions = document.createElement('div'); 
-        actions.className = "gg-software-download";
-        actions.addEventListener('click', function(evt) {
-          downloadFile(fileElem.name);
-        });
-
-        td6.appendChild(actions);
-        tr.appendChild(td1);
-        tr.appendChild(td2);
-        tr.appendChild(td3);
-        tr.appendChild(td4);
-        tr.appendChild(td5);
-        tr.appendChild(td6);
+        let tr = createFileRowElem(fileElem);
         tbody.appendChild(tr);
 
         // if a new file appear in file list, highlight it
@@ -1072,13 +1119,15 @@
   //   nr_slice_all: , 
   //   nr_slice_ok: ,
   // }
-  function updateUploadStatus(filename, status) {
-    console.log(filename, status);
-  }
-
-  function onFileUploaded(filename) {
-    loadFileList(filename);
-    notify(false, `upload ${filename} success`);
+  function updateUploadStatus(overlay, status) {
+    let percent = status.nr_slice_ok / status.nr_slice_all; // 这是一个0到1之间的值
+    let upload_percent = percent * 100;
+    if (percent != 1) {
+      overlay.style.opacity = (0.9 - 0.5 * percent).toFixed(2); // 从20%的透明度开始到100%的不透明
+    } else {
+      overlay.style.opacity = 0;
+    }
+    overlay.textContent = `${upload_percent.toFixed(2)}% uploaded`;
   }
 
   function uploadFile(e) {
@@ -1232,6 +1281,7 @@
       login: prefix_ + "login",
       logout: prefix_ + "logout",
       getfile: prefix_ + "files",
+      getfileelem: prefix_ + "file",
       getdownloadurl: prefix_ + "get_download_url",
       downloadbyurl: prefix_ + "download",
     },
