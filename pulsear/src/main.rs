@@ -813,6 +813,7 @@ struct FileSendableResponse {
 enum WsMessageClass {
   HEARTBEAT(HeartBeat),
   Establish,                  // two direction
+  CreateWsWorker(u64),
   Leave,                      // on logout
   FileSendable(FileSendableResponse), // come out
   FileResponse(FileResponse), // come out
@@ -1245,6 +1246,16 @@ impl Handler<WsMessageInner> for WsSession {
       WsMessageClass::FileSendable(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
+      WsMessageClass::CreateWsWorker(id) => {
+        ctx.address().do_send(WsTextMessage(
+          serde_json::to_string(&WsMessage {
+            sender: WsSender::Server,
+            msg: WsMessageClass::CreateWsWorker(id),
+            policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+          })
+          .unwrap(),
+        ));
+      }
       t => {
         log::error!("unexpect msg: {}", serde_json::to_string(&t).unwrap());
       }
@@ -1318,7 +1329,7 @@ pub async fn ws(
   stream: web::Payload,
   data: web::Data<Arc<Server>>,
 ) -> Result<HttpResponse, actix_web::Error> {
-  log::debug!("ws request from a user: {:?}", req);
+  log::info!("ws request from a user: {:?}", req);
   ws::start(
     WsSession {
       server: data.get_ref().clone(),

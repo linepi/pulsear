@@ -292,6 +292,10 @@ class WsMessageClass {
   static withNotify = text => {
     return new WsMessageClass(6, text);
   };
+  static CreateWsWorker = new WsMessageClass(8, null);
+  static withCreateWsWorker = id => {
+    return new WsMessageClass(8, id);
+  };
   #value
   #content
 
@@ -335,6 +339,9 @@ class WsMessageClass {
       case 7:
         out_obj = "Leave";
         break;
+      case 8:
+        out_obj = { CreateWsWorker: this.#content };
+        break;
     }
     return out_obj;
   }
@@ -361,6 +368,8 @@ class WsMessageClass {
       return WsMessageClass.withNotify(obj.Notify);
     } else if (typeof obj === 'object' && obj !== null && obj.Errjson) {
       return WsMessageClass.withErrjson(obj.Errjson);
+    } else if (typeof obj === 'object' && obj !== null && obj.CreateWsWorker != null) {
+      return WsMessageClass.withCreateWsWorker(obj.CreateWsWorker)
     } else {
       throw new Error("Invalid object for WsMessageClass");
     }
@@ -508,7 +517,49 @@ function onWsNotify(ws_message) {
   notify(important, msg);
 }
 
-function registerWs() {
+function registerWsWorker() {
+  const { location } = window;
+
+  const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
+  const wsUri = `${proto}://${location.host}/ws`;
+  for (let i = 0; i < data.localConfig.wsWorkerNum; i++) {
+    let worker = new WebSocket(wsUri);
+
+    worker.onopen = evt => {
+      console.log('Ws worker connected');
+      let msg = new WsMessage(
+        WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
+        WsMessageClass.withCreateWsWorker(i),
+        WsDispatchType.Server
+      );
+      worker.send(msg.toJson());
+    }
+
+    worker.onmessage = evt => {
+      let ws_message = WsMessage.fromJson(evt.data);
+      console.log(`${i} worker receive ${evt.data}`);
+      if (ws_message.msg.is(WsMessageClass.CreateWsWorker)) {
+        let id = ws_message.msg.content;
+        data.ws.workers[i].builded = true;
+        console.log(id, ' builded');
+      }
+    }
+
+    worker.onclose = evt => {
+      console.log('Ws worker disconnected');
+      worker = null;
+    }
+
+    worker.onerror = evt => {
+      console.log("Ws worker error: ", evt);
+      worker = null;
+    }
+
+    data.ws.workers[i].socket = worker;
+  }
+}
+
+function registerWsMain() {
   const { location } = window;
 
   const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';

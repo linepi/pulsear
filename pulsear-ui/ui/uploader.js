@@ -50,7 +50,6 @@ class Uploader {
           nr_slice_ok: 0
         }; 
         if (file.isUploader) {
-          this.uploadAll(file);
         }
         this.notifyWrapper(false, "upload file " + file_elem.name, file.isUploader);
       } else {
@@ -100,8 +99,15 @@ class Uploader {
     notify(important, `${!isUploader ? "In other place: " : ""}${msg}`)
   }
 
-  // use wssend to send all slice to server async
-  // { f: file, req: request, nr_success_resp: 0 }
+  /**
+    file: { 
+      f: file, 
+      req: request, 
+      tr: null,
+      name_td: null,
+      name_overlay: null
+    };
+   */
   uploadAll(file) {
     let slice_size = file.req.slice_size;
     let size = file.req.size;

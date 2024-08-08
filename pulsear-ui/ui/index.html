@@ -1093,7 +1093,8 @@
     data.loginCtx.alertMessage = "";
     data.loginWindow = false
 
-    registerWs();
+    registerWsMain();
+    registerWsWorker();
     data.uploader = new Uploader();
   }
 
@@ -1293,10 +1294,13 @@
       fileSort: {
         column: 'name',
         order: 'desc' 
-      }
+      },
+      wsWorkerNum: 4,
     },
     ws: {
       socket: null,
+      // worker: { id: 0, builded: true, socket: WebSocket }
+      workers: [],
     },
     files: {
       uploadText: "upload",
@@ -1304,6 +1308,15 @@
     },
     uploader: null
   }
+
+  for (let i = 0; i < rawData.localConfig.wsWorkerNum; i++) {
+    rawData.ws.workers.push({
+      id: i,
+      builded: false,
+      socket: null
+    });
+  }
+
   let directives = {
     'v-text': (el, expr) => {
       el.innerText = eval(expr);
