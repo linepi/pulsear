@@ -675,7 +675,7 @@
             </tr> -->
         </tbody>
       </table>
-      <input id="upload" type="file" v-show="false">
+      <input id="upload" type="file" v-show="false" multiple>
     </section>
 
     <div class="notification-container" v-show="data.localConfig.notify"></div>
@@ -1079,7 +1079,9 @@
       notify(false, "please retry");
       return;
     }
-    data.uploader.upload(e.target.files[0]);
+    [...e.target.files].forEach(function(file) {
+      data.uploader.upload(file);
+    });
   }
 
   // filename: String
