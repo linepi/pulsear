@@ -545,6 +545,8 @@ function registerWs() {
       data.userCtx.token = "";
       data.localConfig.userToken = "";
       data.localConfig.username = "";
+      // enter index when logout
+      window.location = data.prefix;
     }
     if (ws_message.msg.is(WsMessageClass.FileSendable) ||
         ws_message.msg.is(WsMessageClass.FileResponse)) {

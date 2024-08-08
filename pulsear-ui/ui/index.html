@@ -305,10 +305,12 @@
   }
 
   .user-menu a {
+    position: relative;
     display: block;
     padding: 8px 16px;
     text-decoration: none;
     color: var(--text-color);
+    z-index: 1000;
   }
 
   .upload-button {
@@ -426,13 +428,12 @@
 
   .file-list {
     position: relative;
-    width: 100%;
+    width: 80%;
     border-collapse: collapse;
     box-shadow: var(--card-shadow);
     border-radius: 10px;
     table-layout: auto; 
-    overflow-x: auto; 
-    margin-top: 10px;
+    margin: 10px auto 0 2vw;
   }
   .file-list th {
     position: relative;
@@ -441,8 +442,8 @@
     text-align: left;
     background-color: var(--file-table-head-bg-color);
     color: var(--file-table-head-color);
-    overflow: hidden;  
     border-bottom: 5px solid var(--background-color);
+    z-index: 2;
   }
   .file-list th:hover {
     background-color: var(--file-table-head-hover-color);
@@ -455,7 +456,6 @@
     text-align: left;
     background-color: var(--file-table-row-bg-color);
     color: var(--file-table-row-color);
-    overflow: hidden;  
   }
   .file-list tbody tr:hover td {
     background-color: var(--file-table-row-hover-color); 
@@ -570,7 +570,7 @@
     </section>
     <section v-else-if="data.tab === 'files'">
       <div class="gg-software-upload" 
-           style="margin-left:5px"
+           style="margin-left:2.5vw"
            @click="document.getElementById('upload').click()"></div>
       <table class="file-list">
         <thead>
@@ -648,7 +648,6 @@
         }
         let expression = attribute.value;
         el.addEventListener(event, evt => {
-          evt.stopPropagation();
           if (keytype == null || evt.key.toLowerCase() === keytype) {
             if (typeof eval(expression) === 'function') {
               window[expression](el);
@@ -960,7 +959,7 @@
         throw new Error(response);
       }
       response.text().then(text => {
-        window.location = data.api.downloadbyurl + `/${data.userCtx.username}/${text}`;
+        window.open(data.api.downloadbyurl + `/${data.userCtx.username}/${text}`, '_blank');
       });
     }).catch(e => {
       console.error(e);
@@ -968,9 +967,9 @@
   }
 
   function init(rawData) {
-    var userMenu = document.querySelector('.user-menu');
-    var userMenuWrapper = document.querySelector('.user-menu-wrapper');
     document.addEventListener('click', evt => {
+      var userMenu = document.querySelector('.user-menu');
+      var userMenuWrapper = document.querySelector('.user-menu-wrapper');
       if (!userMenuWrapper.contains(event.target) && !userMenu.contains(event.target)) {
         data.userCtx.userMenu = false;
       }
