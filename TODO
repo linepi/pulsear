@@ -16,7 +16,3 @@ main:
 3. support file type icon
 4. support dashboard
 5. support user storage size limit
-
-fix:
-1. user-menu show on top
-2. nav show on top

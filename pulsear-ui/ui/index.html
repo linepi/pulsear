@@ -11,6 +11,7 @@
     --background-color: #f4f4f4;
     --text-color: #333;
     --header-background: #007BFF;
+    --header-background-trans: #007bff35;
     --card-background: #fff;
     --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     --box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
@@ -31,6 +32,7 @@
     --background-color: #101010;
     --text-color: #f4f4f4;
     --header-background: #1a1a1a;
+    --header-background-trans: #1a1a1a23;
     --card-background: #333;
     --card-shadow: 0 4px 8px rgba(255, 255, 255, 0.12);
     --box-shadow: var(--card-shadow);
@@ -118,6 +120,12 @@
     position: fixed;
     width: 100%;
     top: 0;
+    z-index: 1001; 
+    transition: background-color 0.3s ease;
+  }
+
+  .header-transparent {
+    background: var(--header-background-trans); /* 透明度降低 */
   }
 
   nav {
@@ -1139,6 +1147,16 @@
         data.userCtx.token = "";
       }
     }
+    var lastScrollTop = 0;
+    window.addEventListener("scroll", function() {
+      var currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+      if (currentScroll > lastScrollTop){
+        document.querySelector("header").classList.add("header-transparent");
+      } else {
+        document.querySelector("header").classList.remove("header-transparent");
+      }
+      lastScrollTop = currentScroll <= 0 ? 0 : currentScroll; 
+    }, false);
   };
 </script>
 </html>

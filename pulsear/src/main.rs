@@ -725,7 +725,22 @@ struct FileResponse {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+struct DashBoardInfo {
+  online_user: u64,
+  online_client: u64,
+  left_storage: u64,
+  
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct HeartBeat {
+  config: UserConfig,
+  dashboard: DashBoardInfo,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 enum WsMessageClass {
+  HEARTBEAT(HeartBeat),
   Establish,                  // two direction
   Leave,                      // on logout
   FileSendable((String, bool)),       // come out
