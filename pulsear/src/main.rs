@@ -830,7 +830,7 @@ impl FileJob {
     let status: FileResponseStatus;
     let policy: WsDispatchType;
     // the last index
-    if index == (self.request.size - 1) / self.request.slice_size + 1 {
+    if index == (self.request.size - 1) / self.request.slice_size {
       status = FileResponseStatus::Finish;
       policy = WsDispatchType::BroadcastSameUser;
     } else {
