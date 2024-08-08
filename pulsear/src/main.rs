@@ -729,7 +729,6 @@ struct DashBoardInfo {
   online_user: u64,
   online_client: u64,
   left_storage: u64,
-  
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
