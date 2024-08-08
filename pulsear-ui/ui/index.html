@@ -568,7 +568,7 @@
       <h1>Welcome to Pulsear</h1>
       <p>Select a section from the navigation menu to get started.</p>
     </section>
-    <section v-else-if="data.tab === 'files'">
+    <section v-else-if="data.tab === 'files'" @dragover="onDragOver" @drop="onDrop">
       <div class="gg-software-upload" 
            style="margin-left:2.5vw"
            @click="document.getElementById('upload').click()"></div>
@@ -650,7 +650,7 @@
         el.addEventListener(event, evt => {
           if (keytype == null || evt.key.toLowerCase() === keytype) {
             if (typeof eval(expression) === 'function') {
-              window[expression](el);
+              window[expression](el, evt);
             }
           }
         })
@@ -964,6 +964,28 @@
     }).catch(e => {
       console.error(e);
     })
+  }
+
+  function onDragOver(elem, evt) {
+    evt.preventDefault();
+  }
+
+  function onDrop(elem, evt) {
+    console.log("File(s) dropped");
+    evt.preventDefault();
+
+    if (evt.dataTransfer.items) {
+      [...evt.dataTransfer.items].forEach((item, i) => {
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          data.uploader.upload(file);
+        }
+      });
+    } else {
+      [...evt.dataTransfer.files].forEach((file, i) => {
+        data.uploader.upload(file);
+      });
+    }
   }
 
   function init(rawData) {

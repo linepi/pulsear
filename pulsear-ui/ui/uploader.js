@@ -72,6 +72,7 @@ class Uploader {
   }
 
   upload(file) {
+    console.log('upload ', file);
     let hashval = this.hash(file);
     let request = {
       username: data.userCtx.username,
