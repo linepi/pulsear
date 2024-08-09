@@ -402,11 +402,25 @@ pub async fn index() -> HttpResponse {
 pub async fn resources(p: web::Path<String>) -> HttpResponse {
   let path = format!("pulsear-ui/ui/{}", p);
   log::info!("read resources {}", path);
-  let res = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-    println!("error: {} of {}", e, path);
-    e.to_string()
-  });
-  HttpResponse::Ok().body(res)
+  let res = match std::fs::read_to_string(&path) {
+    Ok(content) => content,
+    Err(e) => {
+        log::error!("Error reading {}: {}", path, e);
+        return HttpResponse::InternalServerError().body("Internal Server Error");
+    }
+  };
+  let mut builder = HttpResponse::Ok();
+  builder
+    .append_header(("Cache-Control", "no-cache, no-store, must-revalidate")) // Prevent caching
+    .append_header(("Pragma", "no-cache")) // For older HTTP/1.0 clients
+    .append_header(("Expires", "0")); // Proxies
+  if path.ends_with(".js") {
+    builder.append_header(("Content-Type", "application/javascript"));
+    log::info!("{}", res);
+  } else if path.ends_with(".css") {
+    builder.append_header(("Content-Type", "text/css"));
+  }
+  builder.body(res)
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1012,11 +1026,15 @@ impl actix::Actor for WsSession {
   }
 
   fn stopped(&mut self, _ctx: &mut Self::Context) {
-    assert!(
-      self.server.w_remove_user_ctx(&self.user_ctx),
-      "should have user_ctx"
-    );
-    log::info!("actor stopped");
+    if self.user_ctx.session != None {
+      assert!(
+        self.server.w_remove_user_ctx(&self.user_ctx),
+        "should have user_ctx"
+      );
+      log::info!("actor stopped");
+    } else {
+      log::info!("worker actor stopped");
+    }
   }
 }
 impl Handler<WsTextMessage> for WsSession {

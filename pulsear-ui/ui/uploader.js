@@ -37,7 +37,8 @@ class Uploader {
         let name_td = tr.childNodes[0];
         let overlay = document.createElement('div');
         overlay.className = 'td-overlay';
-        name_td.style.position = 'relative'; 
+        overlay.style.opacity = 0.85;
+        name_td.style.position = 'relative';
         name_td.appendChild(overlay);
         tbody.appendChild(tr);
 
@@ -48,15 +49,20 @@ class Uploader {
         file.upload = {
           nr_slice_all: parseInt((req.size - 1) / req.slice_size + 1),
           nr_slice_ok: 0
-        }; 
+        };
         if (file.isUploader) {
+          giveWorkerMsg(0, {
+            req: file.req,
+            f: file.f,
+          });
         }
+        this.updateUploadStatus(file.name_overlay, file.upload);
         this.notifyWrapper(false, "upload file " + file_elem.name, file.isUploader);
       } else {
-        this.notifyWrapper(false, "sorry, you cannot send ", file.req.name, 
-            file.isUploader);
+        this.notifyWrapper(false, "sorry, you cannot send ", file.req.name,
+          file.isUploader);
         if (file.isUploader) {
-          delete(this.#files[resp.hashval]);
+          delete (this.#files[resp.hashval]);
         }
       }
     }
@@ -68,22 +74,38 @@ class Uploader {
       }
       if (resp.status === "Finish" || resp.status === "Ok") {
         file.upload.nr_slice_ok++;
-        updateUploadStatus(file.name_overlay, file.upload);
+        this.updateUploadStatus(file.name_overlay, file.upload);
         if (resp.status === "Finish") {
           this.onFileUploaded(file);
-          delete(this.#files[resp.file_hash]);
+          delete (this.#files[resp.file_hash]);
         }
       } else if (resp.status === "Resend" && this.#files[resp.file_hash].isUploader) {
-        let start = file.req.slice_size*resp.slice_idx;
-        this.uploadSlice(file.f, file.req.file_hash, resp.slice_idx, 
-            start, 
-            Math.min(file.req.slice_size, file.req.size - start));
+        // let start = file.req.slice_size*resp.slice_idx;
+        // this.uploadSlice(file.f, file.req.file_hash, resp.slice_idx, 
+        //     start, 
+        //     Math.min(file.req.slice_size, file.req.size - start));
       } else if (resp.status === "Fatalerr") {
         this.notifyWrapper(true, `upload ${resp.name} error`, this.#files[resp.file_hash].isUploader);
-        delete(this.#files[resp.file_hash]);
+        delete (this.#files[resp.file_hash]);
       }
     }
   }
+
+  // status {
+  //   nr_slice_all: , 
+  //   nr_slice_ok: ,
+  // }
+  updateUploadStatus(overlay, status) {
+    let percent = status.nr_slice_ok / status.nr_slice_all; // 这是一个0到1之间的值
+    let upload_percent = percent * 100;
+    if (percent != 1) {
+      overlay.style.opacity = (0.85 - 0.5 * percent).toFixed(2); // 从20%的透明度开始到100%的不透明
+    } else {
+      overlay.style.opacity = 0;
+    }
+    overlay.textContent = `${upload_percent.toFixed(2)}% uploaded`;
+  }
+
 
   onFileUploaded(file) {
     let suffix = "";
@@ -91,7 +113,7 @@ class Uploader {
       suffix += " in other place"
     }
 
-    let filename = file.req.filename;
+    let filename = file.req.name;
     notify(false, `upload ${filename} success ${suffix}`);
   }
 
@@ -99,56 +121,22 @@ class Uploader {
     notify(important, `${!isUploader ? "In other place: " : ""}${msg}`)
   }
 
-  /**
-    file: { 
-      f: file, 
-      req: request, 
-      tr: null,
-      name_td: null,
-      name_overlay: null
-    };
-   */
-  uploadAll(file) {
-    let slice_size = file.req.slice_size;
-    let size = file.req.size;
-    let i = 0;
-    let n = parseInt((size - 1) / slice_size + 1);
-
-    while (i < n) {
-      let sendsize = slice_size;
-      if (i == n - 1) {
-        sendsize = size - i*slice_size;
-      }
-      this.uploadSlice(file.f, file.req.file_hash, i, i*slice_size, i*slice_size + sendsize);
-      i++;
-    }
-  }
-
-  uploadSlice(file, hashval, i, start, end) {
-    const hashvalBlob = new Uint8Array(hashval.match(/[\da-f]{2}/gi).map(byte => parseInt(byte, 16)));
-    const view = new DataView(new ArrayBuffer(4));
-    view.setUint32(0, i, true); // true express little-endian
-    const sliceIndexBlob = new Blob([new Uint8Array(view.buffer)]);
-    const fileSliceBlob = file.slice(start, end); 
-    let blobToSend = new Blob([hashvalBlob, sliceIndexBlob, fileSliceBlob]);
-    wssend(blobToSend)
-  }
-
+  // a file hash contain username, filename, filesize, filelastmodify time
   hash(file) {
-    let combinedStr = file.name + data.userCtx.username + 
-        file.size.toString() + file.lastModified.toString();
+    let combinedStr = file.name + data.userCtx.username +
+      file.size.toString() + file.lastModified.toString();
     let hash = 0;
     for (let i = 0; i < combinedStr.length; i++) {
       hash = (hash << 5) - hash + combinedStr.charCodeAt(i);
-      hash |= 0; 
+      hash |= 0;
     }
-    const hashBytes = new Uint8Array(4); 
+    const hashBytes = new Uint8Array(4);
     for (let i = 0; i < 4; i++) {
       hashBytes[i] = (hash >> (i * 8)) & 0xff;
     }
     const result = new Uint8Array(32);
     for (let i = 0; i < 32; i++) {
-      result[i] = hashBytes[i % 4]; 
+      result[i] = hashBytes[i % 4];
     }
     return Array.from(result).map(b => b.toString(16).padStart(2, '0')).join('');
   }
@@ -182,9 +170,9 @@ class Uploader {
       WsDispatchType.Server
     );
     wssend(msg.toJson());
-    this.#files[hashval] = { 
-      f: file, 
-      req: request, 
+    this.#files[hashval] = {
+      f: file,
+      req: request,
       tr: null,
       name_td: null,
       name_overlay: null

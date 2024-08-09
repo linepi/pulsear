@@ -1116,21 +1116,6 @@
 
   }
 
-  // status {
-  //   nr_slice_all: , 
-  //   nr_slice_ok: ,
-  // }
-  function updateUploadStatus(overlay, status) {
-    let percent = status.nr_slice_ok / status.nr_slice_all; // 这是一个0到1之间的值
-    let upload_percent = percent * 100;
-    if (percent != 1) {
-      overlay.style.opacity = (0.9 - 0.5 * percent).toFixed(2); // 从20%的透明度开始到100%的不透明
-    } else {
-      overlay.style.opacity = 0;
-    }
-    overlay.textContent = `${upload_percent.toFixed(2)}% uploaded`;
-  }
-
   function uploadFile(e) {
     console.log('try upload');
     if (e.target.files.length == 0) {
@@ -1312,8 +1297,7 @@
   for (let i = 0; i < rawData.localConfig.wsWorkerNum; i++) {
     rawData.ws.workers.push({
       id: i,
-      builded: false,
-      socket: null
+      worker: null
     });
   }
 
