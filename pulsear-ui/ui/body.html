@@ -1,0 +1,133 @@
+<header>
+  <nav>
+    <div class="logo" v-text="data.pageTitle"></div>
+      <div class="nav-left">
+      <div class="theme-toggle" @click="toggleTheme">
+        <div v-if="data.localConfig.theme === 'dark'" class="moon-icon"></div>
+        <div v-else-if="data.localConfig.theme === 'light'" class="sun-icon"></div>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#" @click="data.tab='home'">Home</a></li>
+        <li><a href="#" @click="
+          if (data.userCtx.login) data.tab='dashboard';
+          else data.loginWindow=true;
+          ">Dashboard</a></li>
+        <li><a href="#" @click="
+          if (data.userCtx.login) { 
+            data.tab='files'; 
+            loadFileList(); 
+          } else { 
+            data.loginWindow=true;
+          }
+          ">Files</a></li>
+        <li v-if="!data.userCtx.login">
+          <a href="#" @click="data.loginWindow=true">Sign In</a>
+        </li>
+        <li v-else>
+          <div class="user-menu-wrapper" @click="data.userCtx.userMenu=!data.userCtx.userMenu">
+            <a href="#" v-text="data.userCtx.username"></a>
+            <div class="user-menu" v-show="data.userCtx.userMenu">
+              <a href="#" @click="onUserProfile">Profile</a>
+              <a href="#" @click="onUserSettings">Settings</a>
+              <a href="#" @click="doLogout">Logout</a>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<!-- 弹窗的容器 -->
+<div class="popup" v-show="data.loginWindow" v-show-bind="onPopLoginWindow">
+  <div class="popup-content">
+    <span class="close-btn" @click="data.loginWindow=false; data.loginCtx.alertMessage=false">&times;</span>
+    <h2>Login & SignUp</h2> 
+    <div class="alert-message" v-show="data.loginCtx.alertMessage" v-text="data.loginCtx.alertMessage"></div>
+    <input type="text" @input="loginInput" 
+      placeholder="Username(4~16 char)" @keydown.enter="doLogin(false)">
+    <input type="password" @input="loginInput" 
+      placeholder="Password(4~16 char)" @keydown.enter="doLogin(false)"> 
+    <button @click="doLogin(false)">Confirm</button>
+  </div>
+</div>
+
+<main>
+  <!-- hidden upload button -->
+  <section v-if="data.tab === 'dashboard'">
+    <h1>Dashboard</h1>
+    <div class="card-container">
+      <div class="card">
+        <i class="fas fa-hdd fa-4x"></i>
+        <h3>Storage</h3>
+        <p>500 GB used of 1 TB</p>
+      </div>
+      <div class="card">
+        <i class="fas fa-network-wired fa-4x"></i>
+        <h3>Network</h3>
+        <p>Up: 50 Mbps / Down: 100 Mbps</p>
+      </div>
+      <div class="card">
+        <i class="fas fa-user-friends fa-4x"></i>
+        <h3>Users</h3>
+        <p>15 Active Users</p>
+      </div>
+    </div>
+  </section>
+  <section v-else-if="data.tab === 'home'">
+    <h1>Welcome to Pulsear</h1>
+    <p>Select a section from the navigation menu to get started.</p>
+  </section>
+  <section v-else-if="data.tab === 'files'" @dragover="onDragOver" @drop="onDrop">
+    <div class="gg-software-upload" 
+          style="margin-left:3vw"
+          @click="document.getElementById('upload').click()"></div>
+    <table class="file-list">
+      <thead><tr>
+        <th @click="sortTableToggle('name')">
+          File Name
+          <i class="sort-order-down" v-show="data.localConfig.fileSort.column === 'name' && data.localConfig.fileSort.order === 'desc'"></i>
+          <i class="sort-order-up" v-show="data.localConfig.fileSort.column === 'name' && data.localConfig.fileSort.order === 'asc'"></i>
+          <div class="resize-handle"></div>
+        </th>
+        <th @click="sortTableToggle('size')">
+          Size
+          <i class="sort-order-down" v-show="data.localConfig.fileSort.column === 'size' && data.localConfig.fileSort.order === 'desc'"></i>
+          <i class="sort-order-up" v-show="data.localConfig.fileSort.column === 'size' && data.localConfig.fileSort.order === 'asc'"></i>
+          <div class="resize-handle"></div>
+        </th>
+        <th @click="sortTableToggle('create_t')">
+          Create
+          <i class="sort-order-down" v-show="data.localConfig.fileSort.column === 'create_t' && data.localConfig.fileSort.order === 'desc'"></i>
+          <i class="sort-order-up" v-show="data.localConfig.fileSort.column === 'create_t' && data.localConfig.fileSort.order === 'asc'"></i>
+          <div class="resize-handle"></div>
+        </th>
+        <th @click="sortTableToggle('modify_t')">
+          Modify
+          <i class="sort-order-down" v-show="data.localConfig.fileSort.column === 'modify_t' && data.localConfig.fileSort.order === 'desc'"></i>
+          <i class="sort-order-up" v-show="data.localConfig.fileSort.column === 'modify_t' && data.localConfig.fileSort.order === 'asc'"></i>
+          <div class="resize-handle"></div>
+        </th>
+        <th @click="sortTableToggle('access_t')">
+          Access
+          <i class="sort-order-down" v-show="data.localConfig.fileSort.column === 'access_t' && data.localConfig.fileSort.order === 'desc'"></i>
+          <i class="sort-order-up" v-show="data.localConfig.fileSort.column === 'access_t' && data.localConfig.fileSort.order === 'asc'"></i>
+          <div class="resize-handle"></div>
+        </th>
+        <th>Action</th>
+      </tr></thead>
+      <tbody>
+          <!-- <tr>
+              <td>Report.docx<dev class="??"></dev></td>
+              <td>Document</td>
+              <td>2023-08-07</td>
+              <td>2023-08-07</td>
+              <td><button class="button">Download</button></td>
+          </tr> -->
+      </tbody>
+    </table>
+    <input id="upload" @change="uploadFile" type="file" v-show="false" multiple>
+  </section>
+
+  <div class="notification-container" v-show="data.localConfig.notify"></div>
+</main>
