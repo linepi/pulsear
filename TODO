@@ -10,8 +10,17 @@ feature and functions
 5. 
 
 main:
+1. dive into actix-web and learn something
 2. support file folder, and its explorer
 3. support file type icon
 4. support dashboard
 5. support user storage size limit
 6. increase max binary transfer size
+
+bug:
+1. safari first file list item will be highlight
+2. safari iphone can not download
+
+robost:
+1. resend from last failure point
+2. 
