@@ -1,7 +1,6 @@
 efficient and development
 1. update user info periodly(which user info?, now just theme)
 2. make login-logout test high concurrent(p3)
-3. learn rust mod system, and split main.rs into resonablely multiple files.(p3)
 
 feature and functions
 1. support upload and download one single file simutaniously(p2)
@@ -11,7 +10,6 @@ feature and functions
 5. 
 
 main:
-1. support drag and paste to upload file.(done)
 2. support file folder, and its explorer
 3. support file type icon
 4. support dashboard
