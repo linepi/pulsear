@@ -41,8 +41,8 @@ let rawData = {
     wsWorkerNum: 4,
   },
   ws: {
+    established: false,
     socket: null,
-    // worker: { id: 0, builded: true, socket: WebSocket }
     workers: [],
   },
   files: {
@@ -265,6 +265,7 @@ async function getBody() {
     const html = await response.text();
     document.body.innerHTML = html;
     walkDom(document.documentElement, doRegisterListeners)
+    specialLisenter();
     refreshDom();
     if (data.localConfig.userToken && data.localConfig.username) {
       if (!doLogin(true)) {
@@ -279,5 +280,4 @@ async function getBody() {
 }
 
 loadLocalConfig(rawData);
-specialLisenter();
 data = observe(rawData);

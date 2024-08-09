@@ -176,7 +176,7 @@ impl Handler<WsTextMessage> for WsSession {
 
   // dispatch message
   fn handle(&mut self, text: WsTextMessage, ctx: &mut Self::Context) {
-    log::info!("send: {}", text.0);
+    log::info!("ws text send: {}", text.0);
     ctx.text(text.0);
   }
 }
@@ -186,7 +186,7 @@ impl Handler<WsMessage> for WsSession {
 
   // dispatch message
   fn handle(&mut self, ws_message: WsMessage, ctx: &mut Self::Context) {
-    log::info!(
+    log::debug!(
       "handle wsmessage {}",
       serde_json::to_string(&ws_message).expect("ws message must be deserializable")
     );
@@ -262,12 +262,7 @@ impl Handler<WsMessageInner> for WsSession {
       }
     }
 
-    log::info!(
-      "handle wsmessage inner {}",
-      serde_json::to_string(&ws_message).expect("ws message must be deserializable")
-    );
-
-    match ws_message.msg {
+    match &ws_message.msg {
       WsMessageClass::Establish => {
         match &ws_message.policy {
           WsDispatchType::Server => (),
@@ -366,7 +361,7 @@ impl Handler<WsMessageInner> for WsSession {
           user_ctx_hash: self.user_ctx.hash()
         };
         if can {
-          match FileListElem::from(pkg.username, pkg.name, pkg.size) {
+          match FileListElem::from(pkg.username.clone(), pkg.name.clone(), pkg.size) {
             Ok(file_elem) => {
               file_sendable_resp.file_elem = Some(file_elem);
             }
@@ -390,8 +385,23 @@ impl Handler<WsMessageInner> for WsSession {
       WsMessageClass::Notify(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
-      WsMessageClass::FileResponse(_) => {
-        ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
+      WsMessageClass::FileResponse(resp) => {
+        match resp.status {
+          FileResponseStatus::Ok => {
+            log::info!(
+              "FILE RESPONSE Ok {}", 
+              serde_json::to_string(&ws_message).expect("ws message must be deserializable")
+            );
+          }
+          _ => {
+            log::info!(
+              "FILE RESPONSE Other {}", 
+              serde_json::to_string(&ws_message).expect("ws message must be deserializable")
+            );
+          }
+        }
+
+        ctx.text(serde_json::to_string(&ws_message).unwrap());
       }
       WsMessageClass::FileSendable(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
@@ -400,7 +410,7 @@ impl Handler<WsMessageInner> for WsSession {
         ctx.address().do_send(WsTextMessage(
           serde_json::to_string(&WsMessage {
             sender: WsSender::Server,
-            msg: WsMessageClass::CreateWsWorker(id),
+            msg: WsMessageClass::CreateWsWorker(*id),
             policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
           })
           .unwrap(),

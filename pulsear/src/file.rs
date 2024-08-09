@@ -1,4 +1,5 @@
 use crate::*;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 // all thing about a file and its transfer
 // binary package:
@@ -137,18 +138,58 @@ pub fn do_get_file_list(param: web::Json<FileListRequest>, data: web::Data<Arc<S
     )?);
   }
   Ok(HttpResponse::Ok().body(serde_json::to_string(&list).unwrap()))
-}#[derive(serde::Serialize, serde::Deserialize)]
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DownloadRequest {
   pub name: String,
   pub username: String,
   pub token: String
 }
 
-struct FileWorker {}
+struct FileWorker {
+  jobs: RwLock<HashMap<String, FileJob>>,
+}
+
+impl FileWorker {
+  fn new() -> Self {
+    Self {
+      jobs: RwLock::new(HashMap::new()),
+    }
+  }
+
+  fn add_job(&self, file_hash: String, job: FileJob) {
+    self.jobs.write().unwrap().insert(file_hash, job);
+  }
+
+  fn work(&self, file_hash: String, index: u64, bytes: bytes::Bytes) {
+    use std::os::unix::prelude::FileExt;
+    let jobs = self.jobs.read().unwrap();
+    let job = jobs.get(&file_hash).unwrap();
+    let slice = bytes.slice(36..);
+    match job.file.write_at(&slice, job.request.slice_size*index) {
+      Ok(sz) => {
+        if sz == slice.len() {
+          job.on_slice_send(index);
+        } else {
+          log::info!("slice sended byte: {}, but need {}", sz, slice.len());
+          job.on_slice_not_send(index);
+        }
+      }
+      Err(e) => {
+        log::debug!("slice not send, err: {}", e);
+        job.on_slice_not_send(index);
+      }
+    }
+  }
+}
+
 struct FileJob {
   request: FileRequest,
   user_ctx: UserCtx,
   file: std::fs::File,
+  sended_slice: AtomicU64,
+  done: AtomicBool
 }
 
 impl FileJob {
@@ -167,16 +208,41 @@ impl FileJob {
     Ok(Self {
       request: req,
       file: f,
-      user_ctx
+      user_ctx,
+      sended_slice: AtomicU64::new(0),
+      done: AtomicBool::new(false)
+    })
+  }
+
+  fn on_slice_not_send(&self, index: u64) {
+    let policy = WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]);
+    // the last index
+    let status = FileResponseStatus::Resend;
+    self.user_ctx.session.as_ref().unwrap().do_send(WsMessage {
+      sender: WsSender::Server,
+      msg: WsMessageClass::FileResponse(FileResponse {
+        name: self.request.name.clone(),
+        file_hash: self.request.file_hash.clone(),
+        slice_idx: index,
+        status
+      }),
+      policy
     })
   }
 
   fn on_slice_send(&self, index: u64) {
+    if self.done.load(Ordering::Relaxed) {
+      log::warn!("receive message when finished {}", serde_json::to_string(&self.request).unwrap());
+      return;
+    }
+    let sended = self.sended_slice.fetch_add(1, Ordering::Relaxed);
+    let whole = (self.request.size - 1) / self.request.slice_size + 1;
     let status: FileResponseStatus;
     let policy = WsDispatchType::BroadcastSameUser;
     // the last index
-    if index == (self.request.size - 1) / self.request.slice_size {
+    if sended + 1 == whole {
       status = FileResponseStatus::Finish;
+      self.done.fetch_or(true, Ordering::Relaxed);
     } else {
       status = FileResponseStatus::Ok;
     }
@@ -189,28 +255,35 @@ impl FileJob {
         status
       }),
       policy
-    })
+    });
   }
 }
 
 pub struct FileHandler {
+  worker_num: i32,
   workers: Vec<FileWorker>,
-  requests: RwLock<HashMap<String, FileJob>>,
-  // username, filename
+  // dispatch file to worker
+  worker_dispatch: RwLock<HashMap<String, usize>>,
+  // download codes: map hash to username, filename
   codes: RwLock<HashMap<String, (String, String)>>,
 }
 
 impl FileHandler {
-  pub fn new() -> Self {
-    Self { 
+  pub fn new(worker_num: i32) -> Self {
+    let mut me = Self { 
+      worker_num,
       workers: vec![],
-      requests: RwLock::new(HashMap::new()),
+      worker_dispatch: RwLock::new(HashMap::new()),
       codes: RwLock::new(HashMap::new()),
+    };
+
+    for _ in 0..worker_num {
+      me.workers.push(FileWorker::new());
     }
+    me
   }
 
   pub fn add(&self, req: FileRequest, user_ctx: UserCtx) -> bool {
-    let mut requests = self.requests.write().unwrap();
     let job = match FileJob::new(req.clone(), user_ctx) {
       Ok(j) => j,
       Err(_) => {
@@ -218,27 +291,21 @@ impl FileHandler {
         return false;
       }
     };
-    requests.insert(req.file_hash, job);
+
+    let worker_id = (Time::now().milli() % self.worker_num as u64) as usize;
+    log::info!("map file{} to worker_id {}", req.file_hash, worker_id);
+    assert!(self.worker_dispatch.write().unwrap().insert(req.file_hash.clone(), worker_id).is_none());
+    self.workers[worker_id].add_job(req.file_hash, job);
     true
   }
 
   pub fn send(&self, bytes: bytes::Bytes) {
-    let hashval = bytes.slice(0..32);
-    let hashstr: String = hashval.iter().map(|b| {
+    let hashstr: String = bytes.slice(0..32).iter().map(|b| {
       format!("{:02x}", b).to_string()
     }).collect();
-
-    let mut request = self.requests.write().unwrap();
-    let job = request.get_mut(&hashstr).unwrap();
-    use std::io::{Seek, SeekFrom, Write};
-
     let index: u64 = bytes.slice(32..36).get_u32_le() as u64;
-    log::info!("write index {}", index);
-    let slice_size: u64 = job.request.slice_size;
-
-    job.file.seek(SeekFrom::Start(slice_size*index)).unwrap();
-    job.file.write_all(&bytes.slice(36..)).unwrap();
-    job.on_slice_send(index);
+    let worker = &self.workers[*self.worker_dispatch.read().unwrap().get(&hashstr).unwrap()];
+    worker.work(hashstr, index, bytes.slice(36..));
   }
 
   pub fn gen_download_code(&self, req: DownloadRequest) -> String {

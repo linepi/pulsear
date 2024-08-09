@@ -172,6 +172,16 @@ function loadFileList(newFileName) {
 
 function uploadFile(evt) {
   console.log('try upload');
+  let numberOfActiveWorker = 0;
+  data.ws.workers.forEach(worker => {
+    if (worker.established) {
+      numberOfActiveWorker++;
+    }
+  });
+  if (!data.ws.established || numberOfActiveWorker == 0) {
+    notify(false, "please wait, then retry");
+    return;
+  }
   if (evt.target.files.length == 0) {
     notify(false, "please retry");
     return;
@@ -225,13 +235,5 @@ function onDrop(evt) {
     [...evt.dataTransfer.files].forEach((file, i) => {
       data.uploader.upload(file);
     });
-  }
-}
-
-function onResponseCode(code) {
-  // if server responsed code is enum::Ok, the code is "Ok" which is a string
-  // else enum::Err, then the code is { "Err": errmsg } which is an object
-  if (typeof code === "object") {
-    throw new Error(code.Err);
   }
 }

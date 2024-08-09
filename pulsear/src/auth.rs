@@ -317,9 +317,10 @@ mod tests {
         worker_num: 4,
         managers: vec![],
         https: false,
+        file_worker_num: 4,
       };
       let server = Arc::new(Server {
-        file_handler: FileHandler::new(),
+        file_handler: FileHandler::new(server_config.file_worker_num),
         config: RwLock::new(server_config),
         user_ctxs: RwLock::new(HashMap::new()),
         dbpool: {

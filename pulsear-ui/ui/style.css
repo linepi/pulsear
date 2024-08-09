@@ -408,7 +408,8 @@ main {
   --file-table-row-color: var(--text-color);
   --file-table-row-bg-color: #303030;
   --file-table-row-highlight-color: #ffb67f;
-  --file-table-row-overlay-text-color: #dae8f293;
+  --file-table-row-overlay-text-color: var(--file-table-row-highlight-color);
+  --file-table-row-overlay-start-bg-color: rgb(178, 177, 177);
 }
 
 .highlight-new-file {

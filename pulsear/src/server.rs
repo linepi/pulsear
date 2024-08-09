@@ -9,6 +9,7 @@ pub struct ServerConfig {
   pub worker_num: i32,
   pub https: bool,
   pub managers: Vec<String>,
+  pub file_worker_num: i32,
 }
 
 pub struct Server {

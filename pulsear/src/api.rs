@@ -191,7 +191,6 @@ pub async fn resources(p: web::Path<String>) -> HttpResponse {
     .append_header(("Expires", "0")); // Proxies
   if path.ends_with(".js") {
     builder.append_header(("Content-Type", "application/javascript"));
-    log::info!("{}", res);
   } else if path.ends_with(".css") {
     builder.append_header(("Content-Type", "text/css"));
   }

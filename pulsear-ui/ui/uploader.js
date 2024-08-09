@@ -1,3 +1,23 @@
+function getRandomInt(ceil) {
+  let bigNum = Math.floor(Math.random() * 10000000);
+  return bigNum % ceil;
+}  
+
+function pseudoSha256(input) {
+  let seed = 0x12345678;
+  for (let i = 0; i < input.length; i++) {
+    seed = (seed * 31 + input.charCodeAt(i)) & 0xFFFFFFFF;
+  }
+  let pseudoHash = '';
+  for (let i = 0; i < 32; i++) {
+    seed = (seed * 31 + i) & 0xFFFFFFFF;
+    pseudoHash += ('00' + (seed >>> 0).toString(16)).slice(-2);
+  }
+  return pseudoHash;
+}
+
+
+
 class Uploader {
   // #websocketNum
   // #workerNum
@@ -11,6 +31,24 @@ class Uploader {
 
   constructor() {
     this.#files = {};
+  }
+
+  chooseWorker() {
+    this.workerNum = data.localConfig.wsWorkerNum;
+    let newChoose;
+    
+    do {
+      if (this.lastChoose == null) {
+        newChoose = getRandomInt(this.workerNum);
+      } else {
+        do {
+          newChoose = getRandomInt(this.workerNum);
+        } while (newChoose == this.lastChoose);
+      }
+    } while(!data.ws.workers[newChoose].established);
+
+    this.lastChoose = newChoose;
+    return newChoose;
   }
 
   onWsMessage(ws_message) {
@@ -51,11 +89,26 @@ class Uploader {
           nr_slice_ok: 0
         };
         if (file.isUploader) {
-          giveWorkerMsg(0, {
-            req: file.req,
-            f: file.f,
-          });
+          let wholeworker = 2;
+          let wholeslice = parseInt((file.req.size - 1) / file.req.slice_size + 1);
+          let worker_slice_devide = parseInt((wholeslice - 1) / wholeworker + 1);
+          let worker_slice_n = 0;
+          if (worker_slice_devide == 0) {
+            worker_slice_devide++;
+          }
+          for (let i = 0; i < wholeworker && worker_slice_n < wholeslice; i++) {
+            let slice_start = i*worker_slice_devide;
+            let slice_send = Math.min(worker_slice_devide, wholeslice - worker_slice_n);
+            giveWorkerMsg(this.chooseWorker(), {
+              req: file.req,
+              f: file.f,
+              slice_idx: [slice_start, slice_start + slice_send],
+            });
+            worker_slice_n += slice_send;
+          }
         }
+
+        this.focusRow(file.tr);
         this.updateUploadStatus(file.name_overlay, file.upload);
         this.notifyWrapper(false, "upload file " + file_elem.name, file.isUploader);
       } else {
@@ -69,25 +122,36 @@ class Uploader {
     if (ws_message.msg.is(WsMessageClass.FileResponse)) {
       let resp = ws_message.msg.content;
       const file = this.#files[resp.file_hash];
-      if (file.upload == null) {
-        console.log('upload is null: ', file);
+      if (file == null || file.upload == null) {
+        console.log('file has been deleted: ', file);
       }
       if (resp.status === "Finish" || resp.status === "Ok") {
         file.upload.nr_slice_ok++;
         this.updateUploadStatus(file.name_overlay, file.upload);
         if (resp.status === "Finish") {
           this.onFileUploaded(file);
-          delete (this.#files[resp.file_hash]);
+          // delete (this.#files[resp.file_hash]);
         }
       } else if (resp.status === "Resend" && this.#files[resp.file_hash].isUploader) {
-        // let start = file.req.slice_size*resp.slice_idx;
-        // this.uploadSlice(file.f, file.req.file_hash, resp.slice_idx, 
-        //     start, 
-        //     Math.min(file.req.slice_size, file.req.size - start));
+        giveWorkerMsg(this.chooseWorker(), {
+          req: file.req,
+          f: file.f,
+          slice_idx: [resp.slice_idx, resp.slice_idx]
+        });
       } else if (resp.status === "Fatalerr") {
         this.notifyWrapper(true, `upload ${resp.name} error`, this.#files[resp.file_hash].isUploader);
         delete (this.#files[resp.file_hash]);
       }
+    }
+  }
+
+  focusRow(tr) {
+    let now = new Date();
+    if (!this.focusMilli || now.getMilliseconds() - this.lastFocusMilli.getMilliseconds() > 1000) {
+      tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this.lastFocusMilli = new Date();
+    } else {
+      console.log(`not eager to scroll, lastTime ${this.lastFocusMilli}, now ${now}`);
     }
   }
 
@@ -114,6 +178,12 @@ class Uploader {
     }
 
     let filename = file.req.name;
+    file.tr.childNodes.forEach(td => {
+      td.classList.add('highlight-new-file');
+      setTimeout(() => {
+        td.classList.add('fadeOutAnimation');
+      }, 0); 
+    });
     notify(false, `upload ${filename} success ${suffix}`);
   }
 
@@ -121,24 +191,11 @@ class Uploader {
     notify(important, `${!isUploader ? "In other place: " : ""}${msg}`)
   }
 
-  // a file hash contain username, filename, filesize, filelastmodify time
+  // a file hash stand for this transfer
   hash(file) {
     let combinedStr = file.name + data.userCtx.username +
-      file.size.toString() + file.lastModified.toString();
-    let hash = 0;
-    for (let i = 0; i < combinedStr.length; i++) {
-      hash = (hash << 5) - hash + combinedStr.charCodeAt(i);
-      hash |= 0;
-    }
-    const hashBytes = new Uint8Array(4);
-    for (let i = 0; i < 4; i++) {
-      hashBytes[i] = (hash >> (i * 8)) & 0xff;
-    }
-    const result = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-      result[i] = hashBytes[i % 4];
-    }
-    return Array.from(result).map(b => b.toString(16).padStart(2, '0')).join('');
+      file.size.toString() + file.lastModified.toString() + new Date().toString();
+    return pseudoSha256(combinedStr);
   }
 
   bytesToHumanReadbleString(bytes) {
@@ -162,7 +219,7 @@ class Uploader {
       size: file.size,
       slice_size: this.#sliceSize,
       last_modified_t: file.lastModified,
-      file_hash: this.hash(file),
+      file_hash: hashval
     };
     let msg = new WsMessage(
       WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),

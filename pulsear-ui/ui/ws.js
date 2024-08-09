@@ -522,10 +522,6 @@ function giveWorkerMsg(i, msg) {
   data.ws.workers[i].worker.postMessage(msg);
 }
 
-function onWorkerMsg(i, msg) {
-
-}
-
 function registerWsWorker() {
   const { location } = window;
 
@@ -533,11 +529,20 @@ function registerWsWorker() {
   const wsUri = `${proto}://${location.host}/ws`;
 
   for (let i = 0; i < data.localConfig.wsWorkerNum; i++) {
+    data.ws.workers[i] = {
+      worker: null,
+      established: false
+    };
     data.ws.workers[i].worker = new Worker(`${data.resources_prefix}worker.js`);
     // register handler for message from worker 
-    data.ws.workers[i].worker.addEventListener("message", function(msg) {
-      onWorkerMsg(i, msg);
-    });
+    data.ws.workers[i].worker.onmessage = function(e) {
+      if (e.data === 'builded') {
+        data.ws.workers[i].established = true;
+      } 
+      if (e.data === 'disconnect') {
+        data.ws.workers[i].established = false;
+      } 
+    };
     data.ws.workers[i].worker.postMessage(`start ${i} ${wsUri} ${data.resources_prefix}`);
   }
 }
@@ -561,7 +566,6 @@ function registerWsMain() {
   }
 
   data.ws.socket.onmessage = evt => {
-    // console.log('Ws received: ' + evt.data);
     let ws_message = WsMessage.fromJson(evt.data);
     if (ws_message.msg.is(WsMessageClass.Errjson)) {
       console.log('json decode error from server!');
@@ -571,6 +575,7 @@ function registerWsMain() {
     }
     if (ws_message.msg.is(WsMessageClass.Establish)) {
       data.userCtx.user_ctx_hash = ws_message.policy.wsClients[0].user_ctx_hash;
+      data.ws.established = true;
     }
     if (ws_message.msg.is(WsMessageClass.Leave)) {
       data.ws.socket.close();
@@ -591,10 +596,12 @@ function registerWsMain() {
   data.ws.socket.onclose = evt => {
     console.log('Ws disconnected');
     data.ws.socket = null;
+    data.ws.established = false;
   }
 
   data.ws.socket.onerror = evt => {
     console.log("Ws error: ", evt);
     data.ws.socket = null;
+    data.ws.established = false;
   }
 }

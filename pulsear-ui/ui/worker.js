@@ -19,7 +19,7 @@ function start(id, wsUri, resources_prefix) {
   socket.onopen = evt => {
     console.log(`worker ${data.id} socket connected`);
     let msg = new WsMessage(
-      WsSender.User,
+      WsSender.withUser("", ""),
       WsMessageClass.withCreateWsWorker(id),
       WsDispatchType.Server
     );
@@ -35,17 +35,22 @@ function start(id, wsUri, resources_prefix) {
         console.error("internal error!");
       }
       data.builded = true;
+      postMessage('builded');
     }
   }
 
   socket.onclose = evt => {
     console.log(`worker ${data.id} socket disconnected`);
     socket = null;
+    data.builded = false;
+    postMessage('disconnect');
   }
 
   socket.onerror = evt => {
     console.log(`worker ${data.id} socket error: `, evt);
     socket = null;
+    data.builded = false;
+    postMessage('disconnect');
   }
 
   data.socket = socket;
@@ -95,6 +100,10 @@ function uploadAll(file) {
   }
 }
 
+function str(obj) {
+  return JSON.stringify(obj, null, "  ");
+}
+
 self.onmessage = function(workerMessageIn) {
   let msg = workerMessageIn.data;
   if (typeof msg === 'string') {
@@ -104,7 +113,16 @@ self.onmessage = function(workerMessageIn) {
 
   let file = {
     f: msg.f,
-    req: msg.req
+    req: msg.req,
+    slice_idx: msg.slice_idx
   }
-  uploadAll(file);
+  if (file.slice_idx) {
+    for (let j = file.slice_idx[0]; j < file.slice_idx[1]; j++) {
+      let start = file.req.slice_size*j;
+      let end = start + Math.min(file.req.slice_size, file.req.size - start);
+      uploadSlice(file.f, file.req.file_hash, j, start, end);
+    }
+  } else {
+    uploadAll(file);
+  }
 }

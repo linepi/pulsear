@@ -105,6 +105,14 @@ function doLogout() {
   })
 }
 
+function onResponseCode(code) {
+  // if server responsed code is enum::Ok, the code is "Ok" which is a string
+  // else enum::Err, then the code is { "Err": errmsg } which is an object
+  if (typeof code === "object") {
+    throw new Error(code.Err);
+  }
+}
+
 function onLogin(response, isInit) {
   onResponseCode(response.code);
   // login success
@@ -122,9 +130,21 @@ function onLogin(response, isInit) {
   data.loginCtx.alertMessage = "";
   data.loginWindow = false
 
-  registerWsMain();
-  registerWsWorker();
-  data.uploader = new Uploader();
+  setTimeout(async () => {
+    while (true) {
+      try {
+        eval('registerWsMain');
+        eval('registerWsWorker');
+        eval('Uploader');
+        registerWsMain();
+        registerWsWorker();
+        data.uploader = new Uploader();
+        break;
+      } catch {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }, 100);
 }
 
 function onLogout(response) {
