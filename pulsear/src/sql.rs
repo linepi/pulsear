@@ -15,29 +15,34 @@ impl SqlHandler {
   pub fn dbpool(&self) -> &mysql::Pool {
     &self.dbpool
   }
-  /// prerequisity: user_config table created
+  /// prerequisite: user_config table created
   /// returned users: with all field filled
   pub fn get_users(&self) -> Result<Vec<User>, Err> {
     let mut dbconn = self.dbpool.get_conn()?;
     let mut users: Vec<User> = vec![];
-    dbconn.query_map(
-      r"SELECT user.id, username, token, theme, user_config.id 
+    let stmt = dbconn.prep(
+      r"SELECT user.id, username, token, theme, user_config.id, web_worker_num, filelist_config, type
 			  from user, user_config 
 			  where user.id = user_config.user_id",
-      |row| {
-        let elems: (i32, String, String, String, i32) = row;
-        let user = User {
-          id: elems.0,
-          username: elems.1,
-          token: elems.2,
-          config: UserConfig {
-            id: elems.4,
-            theme: elems.3,
-          },
-        };
-        users.push(user);
-      },
     )?;
+    let rows: Vec<mysql::Row> = dbconn.exec(&stmt, ())?;
+    for r in rows {
+      let elems: (i32, String, String, String, i32, i32, String, String) = 
+          mysql::from_row_opt(r)?;
+      let user = User {
+        id: elems.0,
+        username: elems.1,
+        token: elems.2,
+        config: UserConfig {
+          id: elems.4,
+          theme: elems.3,
+          web_worker_num: elems.5,
+          filelist_config: serde_json::from_str(&elems.6).unwrap()
+        },
+        usertype: serde_json::from_str(&elems.7)?
+      };
+      users.push(user);
+    }
     Ok(users)
   }
 
@@ -49,7 +54,7 @@ impl SqlHandler {
   ) -> Result<Option<User>, Err> {
     let mut dbconn = self.dbpool.get_conn()?;
     let stmt = dbconn.prep(
-      r"SELECT user.id, username, token, theme, user_config.id 
+      r"SELECT user.id, username, token, theme, user_config.id, web_worker_num, filelist_config, type
 			  from user, user_config 
 			  where user.id = user_config.user_id and
 				    username = :name",
@@ -60,7 +65,7 @@ impl SqlHandler {
     } else if rows.len() > 1 {
       return Err(Box::from("multiple use found"));
     }
-    let row: (i32, String, String, String, i32) =
+    let row: (i32, String, String, String, i32, i32, String, String) =
       mysql::from_row_opt(rows.first().unwrap().to_owned())?;
     let user = User {
       id: row.0,
@@ -69,7 +74,10 @@ impl SqlHandler {
       config: UserConfig {
         id: row.4,
         theme: row.3,
+        web_worker_num: row.5,
+        filelist_config: serde_json::from_str(&row.6)?
       },
+      usertype: UserType::from(&row.7)
     };
     Ok(Some(user))
   }
@@ -77,19 +85,17 @@ impl SqlHandler {
   /// user: username, token, config
   /// returned user: id, ..., config_id
   pub fn add_user(&self, user: &User) -> Result<Option<User>, Err> {
-    match self.get_user_by_name(&user.username)? {
-      Some(u) => return Err(Box::from(format!("user exists: {:?}", u))),
-      None => (),
-    }
-
     let mut dbconn = self.dbpool.start_transaction(TxOpts::default())?;
     let stmt = dbconn.prep(
       r"INSERT INTO user(username, token, type)
-			  VALUES (:username, :token, 'user')",
+			  VALUES (:username, :token, :type)",
     )?;
     dbconn.exec_drop(
       &stmt,
-      params! { "username" => &user.username, "token" => &user.token },
+      params! { 
+        "username" => &user.username, 
+        "token" => &user.token,
+        "type" => &user.usertype.to_string() },
     )?;
     let user_id: i32 = dbconn
       .exec_first(
@@ -100,12 +106,17 @@ impl SqlHandler {
       .expect("user should exists after insertion");
 
     let stmt = dbconn.prep(
-      r"INSERT INTO user_config(user_id, theme)
-			  VALUES (:user_id, :theme)",
+      r"INSERT INTO user_config(user_id, theme, web_worker_num, filelist_config)
+			  VALUES (:user_id, :theme, :web_worker_num, :filelist_config)",
     )?;
     dbconn.exec_drop(
       &stmt,
-      params! { "user_id" => &user_id, "theme" => &user.config.theme },
+      params! { 
+        "user_id" => &user_id, 
+        "theme" => &user.config.theme,
+        "web_worker_num" => user.config.web_worker_num,
+        "filelist_config" => serde_json::to_string(&user.config.filelist_config)?
+      },
     )?;
     dbconn.commit()?;
     self.get_user_by_name(&user.username)
@@ -146,22 +157,19 @@ impl SqlHandler {
     }
     let mut dbconn = self.dbpool.get_conn()?;
     dbconn.exec_drop(
-      r"UPDATE user_config SET theme=?
+      r"UPDATE user_config SET theme=?, web_worker_num=?, filelist_config=?
 			  WHERE user_id = (
 			  	SELECT id FROM user
 				WHERE username = ?
 			  )",
-      (&config.theme, &username),
+      (&config.theme, &config.web_worker_num, 
+       serde_json::to_string(&config.filelist_config)?, &username),
     )?;
     Ok(())
   }
 
   /// change last login time
   pub fn user_login(&self, username: &String) -> Result<(), Err> {
-    match self.get_user_by_name(username)? {
-      Some(u) => log::info!("update user[{:?}]'s login time", u),
-      None => return Err(Box::from(format!("user does not exist: {}", username))),
-    }
     let mut dbconn = self.dbpool.get_conn()?;
     dbconn.exec_drop(
       r"UPDATE user SET last_login_time=NOW()
@@ -193,85 +201,77 @@ mod tests {
       let handler = SqlHandler {
         dbpool: mysql::Pool::new(url.as_str())?,
       };
-      let name = String::from("userggh0");
-      handler.delete_user_by_name(&name).unwrap_or(());
-      assert!(handler.get_user_by_name(&name)?.is_none());
+      let ul: Vec<String> = 
+          vec!["userggh0", "userggh1", "userggh2"].iter().map(|s| s.to_string()).collect();
+      let tk: Vec<String> = 
+          vec!["userggh0", "userggh1", "userggh2"].iter().map(|s| s.to_string()).collect();
+      for name in ul.iter() {
+        handler.delete_user_by_name(&name.to_string()).unwrap_or(());
+        assert!(handler.get_user_by_name(&name.to_string())?.is_none());
+      }
 
-      let token = String::from("token0");
-      let theme = String::from("dark");
+      // basic
+      handler.add_user(&User {
+          id: 0,
+          username: ul[0].clone(),
+          token: tk[0].clone(),
+          config: UserConfig::default(),
+          usertype: UserType::default()
+        })?
+        .unwrap();
+      assert!(handler.get_user_by_name(&ul[0])?.is_some());
+      let user = handler.get_user_by_name(&ul[0])?.unwrap();
+      assert_eq!(&ul[0], &user.username);
+      assert_eq!(&tk[0], &user.token);
+      assert_eq!(&UserConfig::default(), &user.config);
+
+      // change config
+      let mut config = UserConfig::default();
+      config.theme = "light".to_string();
+      handler.update_user_config_by_name(
+        &ul[0], &config
+      )?;
+      let user0 = handler.get_user_by_name(&ul[0])?.unwrap();
+      assert_eq!(&ul[0], &user0.username);
+      assert_eq!(&ul[0], &user0.token);
+      assert_eq!("light", &user0.config.theme);
+
       handler
         .add_user(&User {
           id: 0,
-          username: name.clone(),
-          token: token.clone(),
-          config: UserConfig {
-            id: 0,
-            theme: theme.clone(),
-          },
+          username: ul[1].clone(),
+          token: tk[1].clone(),
+          config: UserConfig::default(),
+          usertype: UserType::default()
         })?
         .unwrap();
-      assert!(handler.get_user_by_name(&name)?.is_some());
-
-      let user = handler.get_user_by_name(&name)?.unwrap();
-      assert_eq!(&name, &user.username);
-      assert_eq!(&token, &user.token);
-      assert_eq!(&theme, &user.config.theme);
-
-      handler.update_user_config_by_name(
-        &name,
-        &UserConfig {
-          id: 0,
-          theme: String::from("light"),
-        },
-      )?;
-      let user0 = handler.get_user_by_name(&name)?.unwrap();
-      assert_eq!(&name, &user0.username);
-      assert_eq!(&token, &user0.token);
-      assert_eq!("light", &user0.config.theme);
-
-      let name1 = String::from("userggh1");
-      handler.delete_user_by_name(&name1).unwrap_or(());
-      assert!(handler.get_user_by_name(&name1)?.is_none());
-      let token = String::from("token1");
-      let theme = String::from("dark");
-      let user1 = handler
-        .add_user(&User {
-          id: 0,
-          username: name1.clone(),
-          token: token.clone(),
-          config: UserConfig {
-            id: 0,
-            theme: theme.clone(),
-          },
-        })?
-        .unwrap();
-      assert!(handler.get_user_by_name(&name1)?.is_some());
+      assert!(handler.get_user_by_name(&ul[1])?.is_some());
 
       assert_eq!(
         handler
           .get_users()?
           .iter()
-          .filter(|u| { *u == &user0 || *u == &user1 })
+          .filter(|u| { *u.username == ul[0] || *u.username == ul[1] })
           .count(),
         2
       );
 
-      handler.delete_user_by_name(&name1)?;
+      handler.delete_user_by_name(&ul[0])?;
       assert_eq!(
         handler
           .get_users()?
           .iter()
-          .filter(|u| { *u == &user0 || *u == &user1 })
+          .filter(|u| { *u.username == ul[0] || *u.username == ul[1] })
           .count(),
         1
       );
 
-      handler.delete_user_by_name(&name)?;
+      handler.delete_user_by_name(&ul[1])?;
       assert_eq!(
         handler
           .get_users()?
           .iter()
-          .filter(|u| { *u == &user0 || *u == &user1 })
+          .filter(|u| { *u.username == ul[0] || *u.username == ul[1] })
           .count(),
         0
       );

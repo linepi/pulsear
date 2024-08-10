@@ -1,7 +1,7 @@
 function getRandomInt(ceil) {
   let bigNum = Math.floor(Math.random() * 10000000);
   return bigNum % ceil;
-}  
+}
 
 function pseudoSha256(input) {
   let seed = 0x12345678;
@@ -34,9 +34,9 @@ class Uploader {
   }
 
   chooseWorker() {
-    this.workerNum = data.localConfig.wsWorkerNum;
+    this.workerNum = data.localConfig.userconfig.web_worker_num;
     let newChoose;
-    
+
     do {
       if (this.lastChoose == null) {
         newChoose = getRandomInt(this.workerNum);
@@ -45,7 +45,7 @@ class Uploader {
           newChoose = getRandomInt(this.workerNum);
         } while (newChoose == this.lastChoose);
       }
-    } while(!data.ws.workers[newChoose].established);
+    } while (!data.ws.workers[newChoose].established);
 
     this.lastChoose = newChoose;
     return newChoose;
@@ -97,7 +97,7 @@ class Uploader {
             worker_slice_devide++;
           }
           for (let i = 0; i < wholeworker && worker_slice_n < wholeslice; i++) {
-            let slice_start = i*worker_slice_devide;
+            let slice_start = i * worker_slice_devide;
             let slice_send = Math.min(worker_slice_devide, wholeslice - worker_slice_n);
             giveWorkerMsg(this.chooseWorker(), {
               req: file.req,
@@ -182,7 +182,7 @@ class Uploader {
       td.classList.add('highlight-new-file');
       setTimeout(() => {
         td.classList.add('fadeOutAnimation');
-      }, 0); 
+      }, 0);
     });
     notify(false, `upload ${filename} success ${suffix}`);
   }

@@ -18,18 +18,56 @@ pub struct LoginRequest {
   pub login_info: LoginInfo,
 }
 
+#[derive(Default, std::fmt::Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum UserType {
+  Master,
+  Manager,
+  Member,
+  #[default]
+  User,
+  Visiter
+}
+
+impl UserType {
+  pub fn from(s: &String) -> UserType {
+    serde_json::from_str(&format!("\"{}\"", s)).unwrap() 
+  }
+}
+
+impl ToString for UserType {
+  fn to_string(&self) -> String {
+    serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+  } 
+}
+
+pub struct UserRight {
+  pub max_storage: u64
+}
+
+impl UserRight {
+  pub fn from(t: UserType) -> Self {
+    let  max_storage: u64;
+    let one_g = 1024*1024*1024;
+    match t {
+      UserType::User => max_storage = one_g,
+      UserType::Visiter => max_storage = 0,
+      UserType::Manager => max_storage = 100*one_g,
+      UserType::Master => max_storage = 1000*one_g,
+      UserType::Member => max_storage = 10*one_g,
+    }
+    Self {
+      max_storage
+    }
+  }
+}
+
 #[derive(std::fmt::Debug)]
 pub struct User {
   pub id: i32,
   pub username: String,
   pub token: String,
   pub config: UserConfig,
-}
-
-impl PartialEq for UserConfig {
-  fn eq(&self, other: &Self) -> bool {
-    self.theme == other.theme
-  }
+  pub usertype: UserType,
 }
 
 impl PartialEq for User {
@@ -40,18 +78,59 @@ impl PartialEq for User {
       && self.config == other.config
   }
 }
+impl Eq for User {}
 
-#[derive(serde::Deserialize, serde::Serialize, std::fmt::Debug)]
+// map a path to its config
+#[derive(serde::Deserialize, serde::Serialize, std::fmt::Debug, PartialEq, Clone)]
+pub struct FileListConfig(HashMap<String, FileListPathConfig>);
+
+#[derive(serde::Deserialize, serde::Serialize, std::fmt::Debug, Clone)]
+pub struct FileListPathConfig {
+  order_by: String,
+  order_asc: bool,
+  columns: Vec<String>
+}
+
+impl PartialEq for FileListPathConfig {
+  fn eq(&self, other: &Self) -> bool {
+    self.order_asc == other.order_asc && 
+    self.order_by == other.order_by &&
+    self.columns == other.columns
+  }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, std::fmt::Debug, Clone)]
 pub struct UserConfig {
   pub id: i32,
   pub theme: String,
+  pub filelist_config: FileListConfig,
+  pub web_worker_num: i32
 }
+
+impl PartialEq for UserConfig {
+  fn eq(&self, other: &Self) -> bool {
+    self.theme == other.theme && 
+    self.filelist_config ==  other.filelist_config && 
+    self.web_worker_num == other.web_worker_num
+  }
+}
+impl Eq for UserConfig {}
+
 
 impl Default for UserConfig {
   fn default() -> Self {
+    let columns = FileListElem::columns();
     Self {
       id: 0,
       theme: "dark".to_string(),
+      web_worker_num: 4,
+      filelist_config: FileListConfig(HashMap::from([
+        (String::from("/"), FileListPathConfig {
+          order_by: columns[0].clone(),
+          columns,
+          order_asc: true,
+        }),
+      ]))
     }
   }
 }
@@ -67,7 +146,6 @@ pub struct LoginResponse {
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct LogoutRequest {
   pub basic_info: StreamBasicInfo,
-  pub config: UserConfig,
   pub username: String,
   pub token: String,
 }
@@ -123,6 +201,7 @@ pub fn do_login(
             username: param.login_info.username.clone(),
             token: token.clone(),
             config: UserConfig::default(),
+            usertype: UserType::default()
           })?
           .expect("add user error!");
         assert_eq!(&u.token, &token);
@@ -173,10 +252,8 @@ pub fn do_logout(
     },
     code: ResponseCode::Ok,
   };
-  sqlhandler.update_user_config_by_name(&param.username, &param.config)?;
   Ok(logout_response)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -318,19 +395,9 @@ mod tests {
         managers: vec![],
         https: false,
         file_worker_num: 4,
+        sql_url: "mysql://wu:wi@localhost:3307/pulsear".to_string(),
       };
-      let server = Arc::new(Server {
-        file_handler: FileHandler::new(server_config.file_worker_num),
-        config: RwLock::new(server_config),
-        user_ctxs: RwLock::new(HashMap::new()),
-        dbpool: {
-          if let Ok(url) = std::env::var("PULSEAR_DATABASE_URL") {
-            mysql::Pool::new(url.as_str()).unwrap()
-          } else {
-            panic!("please set env PLUSEAR_DATABASE_URL");
-          }
-        },
-      });
+      let server = Arc::new(Server::from(server_config));
       return TestServer {
         server: server.clone(),
       };
@@ -397,7 +464,6 @@ mod tests {
       basic_info: StreamBasicInfo {
         time_stamp: Time::now().milli(),
       },
-      config: resp.config,
       username: username.clone(),
       token: resp.token.clone(),
     };
@@ -408,5 +474,13 @@ mod tests {
     client.check_logout_resp(&resp);
     assert_eq!(server.current_online_user_num_by_name(&username), 0);
     Ok(())
+  }
+
+  #[test]
+  fn usertype() {
+    let t = UserType::Master;
+    println!("{}", serde_json::to_string(&t).unwrap());
+    let s = "\"Master\"";
+    println!("{:?}", serde_json::from_str::<UserType>(s).unwrap());
   }
 }

@@ -1,36 +1,35 @@
 function toggleTheme() {
-  if (data.localConfig.theme === 'dark') {
-    data.localConfig.theme = 'light';
+  if (data.localConfig.userconfig.theme === 'dark') {
+    data.localConfig.userconfig.theme = 'light';
   } else {
-    data.localConfig.theme = 'dark';
+    data.localConfig.userconfig.theme = 'dark';
   }
 }
 
 function sortTableToggle(column) {
-  if (data.localConfig.fileSort.column === column) {
-    data.localConfig.fileSort.order = data.localConfig.fileSort.order === 'asc' ? 'desc' : 'asc';
+  if (data.localConfig.userconfig.filelist_config["/"].order_by === column) {
+    data.localConfig.userconfig.filelist_config["/"].order_asc =
+      !data.localConfig.userconfig.filelist_config["/"].order_asc;
   } else {
-    data.localConfig.fileSort.column = column;
-    data.localConfig.fileSort.order = 'asc';
+    data.localConfig.userconfig.filelist_config["/"].order_by = column;
   }
   const tbody = document.querySelector('.file-list tbody');
   let rows = Array.from(tbody.querySelectorAll('tr'));
-  sortTableImpl(rows, column, data.localConfig.fileSort.order, (obj) => {
+  sortTableImpl(rows, column, data.localConfig.userconfig.filelist_config['/'].order_asc, (obj) => {
     return obj.querySelector(`td[data-key="${column}"]`).textContent;
   });
   rows.forEach(row => tbody.appendChild(row));
 }
 
-function sortTableImpl(rows, sortKey, order, getContent) {
-  let isAscending = order === 'asc' ? true : false;
-  let convertSizeToBytes = function(sizeStr) {
+function sortTableImpl(rows, sortKey, asc, getContent) {
+  let convertSizeToBytes = function (sizeStr) {
     const units = { 'Kb': 1024, 'Mb': 1024 * 1024, 'Gb': 1024 * 1024 * 1024 };
     const regex = /(\d+(?:\.\d+)?)\s*(Kb|Mb|Gb)/;
     const matches = sizeStr.match(regex);
     if (matches) {
-        const value = parseFloat(matches[1]);
-        const unit = matches[2];
-        return value * units[unit];
+      const value = parseFloat(matches[1]);
+      const unit = matches[2];
+      return value * units[unit];
     }
     return 0; // Return 0 if no matches or in case of invalid format
   }
@@ -41,15 +40,15 @@ function sortTableImpl(rows, sortKey, order, getContent) {
     if (sortKey === 'size') { // Size sorting
       valA = convertSizeToBytes(valA);
       valB = convertSizeToBytes(valB);
-    } else if (sortKey === 'create' || sortKey === 'modify' || sortKey === 'access') { // Date sorting
+    } else if (sortKey === 'create_t' || sortKey === 'modify_t' || sortKey === 'access_t') { // Date sorting
       valA = new Date(valA);
       valB = new Date(valB);
     }
 
-    if (typeof valA === 'number' && typeof valB === 'number') {
-      return isAscending ? valA - valB : valB - valA;
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
     } else {
-      return isAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      return asc ? valA - valB : valB - valA;
     }
   });
 }
@@ -57,26 +56,23 @@ function sortTableImpl(rows, sortKey, order, getContent) {
 // 
 function createFileRowElem(fileElem) {
   let tr = document.createElement('tr');
-  let td1 = document.createElement('td'); td1.innerHTML = fileElem.name; td1.setAttribute('data-key', 'name');
-  let td2 = document.createElement('td'); td2.innerHTML = fileElem.size; td2.setAttribute('data-key', 'size');
-  let td3 = document.createElement('td'); td3.innerHTML = fileElem.create_t; td3.setAttribute('data-key', 'create_t');
-  let td4 = document.createElement('td'); td4.innerHTML = fileElem.modify_t; td4.setAttribute('data-key', 'modify_t');
-  let td5 = document.createElement('td'); td5.innerHTML = fileElem.access_t; td5.setAttribute('data-key', 'access_t');
-
-  let td6 = document.createElement('td'); 
-  let actions = document.createElement('div'); 
-  actions.className = "gg-software-download";
-  actions.addEventListener('click', function(evt) {
-    downloadFile(fileElem.name);
+  let columns = data.localConfig.userconfig.filelist_config['/'].columns;
+  columns.forEach(columnName => {
+    let td = document.createElement('td'); 
+    td.innerHTML = fileElem[columnName]; 
+    td.setAttribute('data-key', columnName);
+    tr.appendChild(td);
   });
 
-  td6.appendChild(actions);
-  tr.appendChild(td1);
-  tr.appendChild(td2);
-  tr.appendChild(td3);
-  tr.appendChild(td4);
-  tr.appendChild(td5);
-  tr.appendChild(td6);
+  let td = document.createElement('td');
+  let actions = document.createElement('div');
+  actions.className = "gg-software-download";
+  actions.addEventListener('click', function (evt) {
+    downloadFile(fileElem.name);
+  });
+  td.appendChild(actions);
+  tr.appendChild(td);
+
   return tr;
 }
 
@@ -100,12 +96,82 @@ function getFileElem(newFileName) {
     }
     return response.json();
   }).then(json => {
-    newFileElem = json; 
+    newFileElem = json;
   }).catch(e => {
     console.error("get file error ", e);
     return null;
   })
   return newFileElem;
+}
+
+function createFileListHeader() {
+  let columnName2text = {
+    "name": "File Name",
+    "size": "Size",
+    "create_t": "Create",
+    "modify_t": "Modify",
+    "access_t": "Access"
+  };
+  let columns = data.localConfig.userconfig.filelist_config['/'].columns;
+  let thead_tr = document.querySelector('thead tr');
+  thead_tr.innerHTML = '';
+  columns.forEach(columnName => {
+    let th = document.createElement('th');
+    th.innerHTML = 
+      `<th>
+        ${columnName2text[columnName]}
+        <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='${columnName}' &&
+          !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
+        <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='${columnName}' &&
+          data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
+        <div class=" resize-handle"></div>
+      </th>`;
+    th.addEventListener('click', () => {
+      sortTableToggle(columnName);
+    });
+    thead_tr.appendChild(th);
+  });
+  let action_th = document.createElement('th');
+  action_th.innerHTML = 'Action';
+  thead_tr.appendChild(action_th);
+
+  // init file list column resize handle
+  const handles = document.querySelectorAll('.resize-handle');
+  handles.forEach(handle => {
+    let col = handle.parentElement;
+    let x = 0;
+    let w = 0;
+    const mouseDownHandler = function (e) {
+      // Get the current mouse position
+      x = e.clientX;
+
+      // Calculate the current width of column
+      const styles = window.getComputedStyle(col);
+      w = parseInt(styles.width, 10);
+
+      // Attach listeners for document's events
+      document.addEventListener('mousemove', mouseMoveHandler);
+      document.addEventListener('mouseup', mouseUpHandler);
+    };
+
+    const mouseMoveHandler = function (e) {
+      // Determine how far the mouse has been moved
+      const dx = e.clientX - x;
+
+      // Update the width of column
+      col.style.width = `${w + dx}px`;
+    };
+
+    // When user releases the mouse, remove the existing event listeners
+    const mouseUpHandler = function () {
+      document.removeEventListener('mousemove', mouseMoveHandler);
+      document.removeEventListener('mouseup', mouseUpHandler);
+    };
+
+    handle.addEventListener('mousedown', mouseDownHandler);
+  })
+
+
 }
 
 function loadFileList(newFileName) {
@@ -114,6 +180,8 @@ function loadFileList(newFileName) {
     return;
   }
   console.log("load file");
+  createFileListHeader();
+  refreshDom();
   // add file list element
   let tbody = document.querySelector('tbody');
   tbody.innerHTML = '';
@@ -141,16 +209,11 @@ function loadFileList(newFileName) {
     //   access_t: String,
     //   modify_t: String,
     // }
-    sortTableImpl(json.files, data.localConfig.fileSort.column,
-      data.localConfig.fileSort.order, (file) => {
-        switch (data.localConfig.fileSort.column) {
-        case "name": return file.name;
-        case "size": return file.size;
-        case "create_t": return file.create_t;
-        case "modify_t": return file.modify_t;
-        case "access_t": return file.access_t;
-        }
-    });
+    sortTableImpl(json.files, data.localConfig.userconfig.filelist_config["/"].order_by,
+      data.localConfig.userconfig.filelist_config["/"].order_asc, (file) => {
+        let columnVal = file[data.localConfig.userconfig.filelist_config["/"].order_by];
+        return columnVal;
+      });
     json.files.forEach(fileElem => {
       let tr = createFileRowElem(fileElem);
       tbody.appendChild(tr);
@@ -161,7 +224,7 @@ function loadFileList(newFileName) {
           td.classList.add('highlight-new-file');
           setTimeout(() => {
             td.classList.add('fadeOutAnimation');
-          }, 0); 
+          }, 0);
         });
       }
     });
@@ -186,7 +249,7 @@ function uploadFile(evt) {
     notify(false, "please retry");
     return;
   }
-  [...evt.target.files].forEach(function(file) {
+  [...evt.target.files].forEach(function (file) {
     data.uploader.upload(file);
   });
 }

@@ -41,6 +41,13 @@ pub struct FileListElem {
 }
 
 impl FileListElem {
+  pub fn columns() -> Vec<String> {
+    vec!["name", "size", "create_t", "access_t", "modify_t"]
+        .iter_mut()
+        .map(|str| str.to_string())
+        .collect()
+  }
+
   pub fn from_name_and_metadata(name: String, metadata: std::fs::Metadata) 
     -> Result<Self, Err> {
     let size_in_bytes = metadata.size();
@@ -321,5 +328,20 @@ impl FileHandler {
       Some(p) => Some((p.0.clone(), p.1.clone())),
       None => None
     }
+  }
+
+  pub fn get_user_used_storage(&self, username: &String) -> Result<u64, Err> {
+    let storage = std::path::PathBuf::from("inner/storage");
+    let userfolder = storage.join(username);
+    if !userfolder.exists() {
+      return Ok(0);
+    }
+    let read_dir = std::fs::read_dir(userfolder)?;
+    let mut ret = 0;
+    for path in read_dir {
+      let entry = path?;
+      ret += entry.metadata()?.size();
+    }
+    Ok(ret)
   }
 }

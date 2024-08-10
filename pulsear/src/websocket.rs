@@ -23,6 +23,7 @@ impl PartialEq for UserCtx {
       && self.user_agent == other.user_agent
   }
 }
+impl Eq for UserCtx {}
 
 impl fmt::Display for UserCtx {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -86,6 +87,7 @@ pub struct DashBoardInfo {
   pub online_user: u64,
   pub online_client: u64,
   pub left_storage: u64,
+  pub use_max_storage: u64,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -104,7 +106,7 @@ pub struct FileSendableResponse {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum WsMessageClass {
-  HEARTBEAT(HeartBeat),
+  HeartBeat(HeartBeat),
   Establish,                  // two direction
   CreateWsWorker(u64),
   Leave,                      // on logout
@@ -263,6 +265,41 @@ impl Handler<WsMessageInner> for WsSession {
     }
 
     match &ws_message.msg {
+      WsMessageClass::HeartBeat(hb) => {
+        let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
+        sqlhandler.update_user_config_by_name(&self.user_ctx.username, &hb.config).unwrap();
+
+        let server_info = self.server.r_server_info();
+        let user_used_storage = 
+            self.server.file_handler.get_user_used_storage(&self.user_ctx.username).unwrap();
+
+        let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
+        let usertype = sqlhandler
+          .get_user_by_name(&self.user_ctx.username)
+          .expect("should has user")
+          .expect("should has user")
+          .usertype;
+        let user_max_storage = UserRight::from(usertype).max_storage;
+
+        let send_hb = HeartBeat {
+          config: hb.config.clone(),
+          dashboard: DashBoardInfo {
+            online_user: server_info.online_user,
+            online_client: server_info.online_client,
+            left_storage: user_max_storage - user_used_storage,
+            use_max_storage: user_max_storage
+          }
+        };
+
+        ctx.address().do_send(WsTextMessage(
+          serde_json::to_string(&WsMessage {
+            sender: WsSender::Server,
+            msg: WsMessageClass::HeartBeat(send_hb),
+            policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+          })
+          .unwrap(),
+        ));
+      }
       WsMessageClass::Establish => {
         match &ws_message.policy {
           WsDispatchType::Server => (),
@@ -415,9 +452,6 @@ impl Handler<WsMessageInner> for WsSession {
           })
           .unwrap(),
         ));
-      }
-      t => {
-        log::error!("unexpect msg: {}", serde_json::to_string(&t).unwrap());
       }
     }
   }

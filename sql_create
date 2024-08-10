@@ -15,8 +15,8 @@ CREATE TABLE `user_config` (
     `id` int NOT NULL AUTO_INCREMENT COMMENT 'Primary Key',
     `user_id` int NOT NULL COMMENT 'User foreign key',
     `theme` varchar(16) DEFAULT NULL COMMENT 'Color theme',
-    `filelist_sort_key_type` TEXT DEFAULT NULL COMMENT 'map: map filepath(relative path) sort key of file list',
-    `filelist_columns` TEXT DEFAULT NULL COMMENT 'list: list of columns show in file list',
+    `web_worker_num` int DEFAULT 4,
+    `filelist_config` TEXT DEFAULT NULL COMMENT 'map path to its config',
     PRIMARY KEY (`id`),
     KEY `user_id` (`user_id`),
     CONSTRAINT `user_config_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)

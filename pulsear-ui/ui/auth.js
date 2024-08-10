@@ -1,6 +1,6 @@
 function onPopLoginWindow(el) {
-  el.style.display = "flex"; 
-  el.focus(); 
+  el.style.display = "flex";
+  el.focus();
 }
 
 function loginInput(evt) {
@@ -56,8 +56,8 @@ function doLogin(isInit) {
     body: JSON.stringify(loginRequest)
   }).then(response => {
     if (!response.ok) {
-      console.error("login bad response:", response);
-      data.loginCtx.alertMessage = "server response:" + response.statusText;
+      console.error("login bad response: ", response);
+      data.loginCtx.alertMessage = "server response: " + response.text();
       throw new Error(data.loginCtx.alertMessage);
     }
     return response.json();
@@ -79,10 +79,6 @@ function doLogout() {
     },
     username: data.userCtx.username,
     token: data.userCtx.token,
-    config: {
-      id: 0,
-      theme: data.localConfig.theme
-    }
   };
   console.log("try logout with request ", logoutRequest);
   fetch(data.api.logout, {
@@ -117,10 +113,10 @@ function onLogin(response, isInit) {
   onResponseCode(response.code);
   // login success
   data.localConfig.userToken = response.token;
-  data.localConfig.theme = response.config.theme;
   data.userCtx.login = true
   data.userCtx.token = response.token;
-
+  data.localConfig.userconfig = observe(response.config);
+  console.log('Get userconfig on login: ', data.localConfig.userconfig);
   if (isInit) {
     data.userCtx.username = data.localConfig.username;
   } else {

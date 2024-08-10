@@ -19,9 +19,9 @@ class WsClient {
   }
 
   asObj() {
-    return { 
+    return {
       username: pclone(this.#username),
-      user_ctx_hash: pclone(this.#user_ctx_hash) 
+      user_ctx_hash: pclone(this.#user_ctx_hash)
     }
   }
 
@@ -201,7 +201,7 @@ class WsDispatchType {
       case 1:
         out_obj = "Server";
         break;
-      case 2: 
+      case 2:
         out_obj = { Targets: pclone(this.#wsClients) };
         break;
       case 3:
@@ -296,6 +296,10 @@ class WsMessageClass {
   static withCreateWsWorker = id => {
     return new WsMessageClass(8, id);
   };
+  static HeartBeat = new WsMessageClass(9, null);
+  static withHeartBeat = id => {
+    return new WsMessageClass(9, id);
+  };
   #value
   #content
 
@@ -342,6 +346,9 @@ class WsMessageClass {
       case 8:
         out_obj = { CreateWsWorker: this.#content };
         break;
+      case 9:
+        out_obj = { HeartBeat: this.#content };
+        break;
     }
     return out_obj;
   }
@@ -370,6 +377,8 @@ class WsMessageClass {
       return WsMessageClass.withErrjson(obj.Errjson);
     } else if (typeof obj === 'object' && obj !== null && obj.CreateWsWorker != null) {
       return WsMessageClass.withCreateWsWorker(obj.CreateWsWorker)
+    } else if (typeof obj === 'object' && obj !== null && obj.HeartBeat != null) {
+      return WsMessageClass.withCreateWsWorker(obj.HeartBeat)
     } else {
       throw new Error("Invalid object for WsMessageClass");
     }
@@ -528,20 +537,20 @@ function registerWsWorker() {
   const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
   const wsUri = `${proto}://${location.host}/ws`;
 
-  for (let i = 0; i < data.localConfig.wsWorkerNum; i++) {
+  for (let i = 0; i < data.localConfig.userconfig.web_worker_num; i++) {
     data.ws.workers[i] = {
       worker: null,
       established: false
     };
     data.ws.workers[i].worker = new Worker(`${data.resources_prefix}worker.js`);
     // register handler for message from worker 
-    data.ws.workers[i].worker.onmessage = function(e) {
+    data.ws.workers[i].worker.onmessage = function (e) {
       if (e.data === 'builded') {
         data.ws.workers[i].established = true;
-      } 
+      }
       if (e.data === 'disconnect') {
         data.ws.workers[i].established = false;
-      } 
+      }
     };
     data.ws.workers[i].worker.postMessage(`start ${i} ${wsUri} ${data.resources_prefix}`);
   }
@@ -563,6 +572,23 @@ function registerWsMain() {
       WsDispatchType.Server
     );
     wssend(msg.toJson());
+    // send heartbeat in 2s
+    setInterval(() => {
+      let msg = new WsMessage(
+        WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
+        WsMessageClass.withHeartBeat({
+          config: data.localConfig.userconfig,
+          dashboard: {
+            online_user: 0,
+            online_client: 0,
+            left_storage: 0,
+            use_max_storage: 0
+          }
+        }),
+        WsDispatchType.Server
+      );
+      wssend(msg.toJson());
+    }, 2000);
   }
 
   data.ws.socket.onmessage = evt => {
@@ -588,8 +614,12 @@ function registerWsMain() {
       window.location = data.prefix;
     }
     if (ws_message.msg.is(WsMessageClass.FileSendable) ||
-        ws_message.msg.is(WsMessageClass.FileResponse)) {
+      ws_message.msg.is(WsMessageClass.FileResponse)) {
       data.uploader.onWsMessage(ws_message);
+    }
+    if (ws_message.msg.is(WsMessageClass.HeartBeat)) {
+      let heartbeat = ws_message.msg.content;
+      data.dashboard = heartbeat.dashboard; 
     }
   }
 

@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU64;
+
 use crate::*;
 use api::*;
 
@@ -10,6 +12,18 @@ pub struct ServerConfig {
   pub https: bool,
   pub managers: Vec<String>,
   pub file_worker_num: i32,
+  pub sql_url: String
+}
+
+#[derive(Default)]
+struct ServerInfoInner {
+  online_user: AtomicU64,
+  online_client: AtomicU64,
+}
+
+pub struct ServerInfo {
+  pub online_user: u64,
+  pub online_client: u64,
 }
 
 pub struct Server {
@@ -18,9 +32,27 @@ pub struct Server {
   pub user_ctxs: RwLock<HashMap<String, Vec<UserCtx>>>,
   pub file_handler: FileHandler,
   pub dbpool: mysql::Pool,
+  info: ServerInfoInner
 }
 
 impl Server {
+  pub fn from(server_config: ServerConfig) -> Self {
+    Self {
+      file_handler: FileHandler::new(server_config.file_worker_num),
+      user_ctxs: RwLock::new(HashMap::new()),
+      dbpool: mysql::Pool::new(server_config.sql_url.as_str()).unwrap(),
+      config: RwLock::new(server_config),
+      info: ServerInfoInner::default()
+    }
+  }
+
+  pub fn r_server_info(&self) -> ServerInfo {
+    ServerInfo {
+      online_user: self.info.online_user.load(std::sync::atomic::Ordering::Relaxed),
+      online_client: self.info.online_client.load(std::sync::atomic::Ordering::Relaxed),
+    } 
+  }
+
   pub fn r_config(&self) -> ServerConfig {
     self.config.read().unwrap().clone()
   }
@@ -50,13 +82,16 @@ impl Server {
     ctx_vec
   }
 
-  // add a user_ctx to server state, must not exist
+  // add a user_ctx to server state, must not exist because user_ctx depend on connected time
   pub fn w_add_user_ctx(&self, user_ctx: UserCtx) {
     let mut user_ctxs = self.user_ctxs.write().unwrap();
     if let Some(ctx_vec) = user_ctxs.get_mut(&user_ctx.username) {
       assert!(!ctx_vec.contains(&user_ctx), "must not exist");
+      self.info.online_client.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       ctx_vec.push(user_ctx.clone());
     } else {
+      self.info.online_user.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      self.info.online_client.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       assert!(user_ctxs
         .insert(user_ctx.username.clone(), vec![user_ctx.clone()])
         .is_none());
@@ -77,6 +112,8 @@ impl Server {
       match target {
         Some(i) => {
           ctx_vec.remove(i);
+          self.info.online_user.fetch_sub((ctx_vec.len() == 0) as u64, std::sync::atomic::Ordering::Relaxed);
+          self.info.online_client.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
           true
         }
         None => false,
@@ -208,3 +245,4 @@ pub async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Res
     .await
   }
 }
+
