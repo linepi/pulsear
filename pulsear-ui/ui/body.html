@@ -55,20 +55,24 @@
   <section v-if="data.tab === 'dashboard'">
     <h1>Dashboard</h1>
     <div class="card-container">
-      <div class="card">
-        <i class="fas fa-hdd fa-4x"></i>
-        <h3>Storage</h3>
-        <p>500 GB used of 1 TB</p>
+      <div class="card" v-show="data.dashboard.cards[0] != null">
+        <h3 v-text="data.dashboard.cards[0].header"></h3>
+        <p v-var>
+          {{bytesToHumanReadbleString(data.dashboard.info.user_max_storage - data.dashboard.info.left_storage)}} used of 
+          {{bytesToHumanReadbleString(data.dashboard.info.user_max_storage)}}
+        </p>
       </div>
-      <div class="card">
-        <i class="fas fa-network-wired fa-4x"></i>
-        <h3>Network</h3>
-        <p>Up: 50 Mbps / Down: 100 Mbps</p>
+      <div class="card" v-show="data.dashboard.cards[1] != null">
+        <h3 v-text="data.dashboard.cards[1].header"></h3>
+        <p v-var>{{data.dashboard.info.online_user}} Active Users</p>
       </div>
-      <div class="card">
-        <i class="fas fa-user-friends fa-4x"></i>
-        <h3>Users</h3>
-        <p>15 Active Users</p>
+      <div class="card" v-show="data.dashboard.cards[2] != null">
+        <h3 v-text="data.dashboard.cards[2].header"></h3>
+        <p v-var>{{data.dashboard.info.online_client}} Connected Clients</p>
+      </div>
+      <div class="card" v-show="data.dashboard.cards[3] != null">
+        <h3 v-text="data.dashboard.cards[3].header"></h3>
+        <p></p>
       </div>
     </div>
   </section>
@@ -79,60 +83,8 @@
   <section v-else-if="data.tab === 'files'" @dragover="onDragOver" @drop="onDrop">
     <div class="gg-software-upload" style="margin-left:3vw" @click="document.getElementById('upload').click()"></div>
     <table class="file-list">
-      <thead>
-        <tr>
-          <!-- <th @click="sortTableToggle('name')">
-            File Name
-            <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='name' &&
-              !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='name' &&
-              data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <div class=" resize-handle"></div>
-          </th> -->
-          <!-- <th @click="sortTableToggle('size')">
-            Size
-            <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='size' &&
-              !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='size' &&
-              data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <div class=" resize-handle"></div>
-          </th> -->
-          <!-- <th @click="sortTableToggle('create_t')">
-            Create
-            <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='create_t'
-              && !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='create_t' &&
-              data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <div class=" resize-handle"></div>
-          </th>
-          <th @click="sortTableToggle('modify_t')">
-            Modify
-            <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='modify_t'
-              && !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='modify_t' &&
-              data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <div class=" resize-handle"></div>
-          </th>
-          <th @click="sortTableToggle('access_t')">
-            Access
-            <i class="sort-order-down" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='access_t'
-              && !data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <i class=" sort-order-up" v-show="data.localConfig.userconfig.filelist_config['/'].order_by==='access_t' &&
-              data.localConfig.userconfig.filelist_config['/'].order_asc"></i>
-            <div class=" resize-handle"></div>
-          </th>
-          <th>Action</th> -->
-        </tr>
-      </thead>
-      <tbody>
-        <!-- <tr>
-              <td>Report.docx<dev class="??"></dev></td>
-              <td>Document</td>
-              <td>2023-08-07</td>
-              <td>2023-08-07</td>
-              <td><button class="button">Download</button></td>
-          </tr> -->
-      </tbody>
+      <thead><tr></tr></thead>
+      <tbody></tbody>
     </table>
     <input id="upload" @change="uploadFile" type="file" v-show="false" multiple>
   </section>

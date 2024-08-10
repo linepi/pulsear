@@ -378,7 +378,7 @@ class WsMessageClass {
     } else if (typeof obj === 'object' && obj !== null && obj.CreateWsWorker != null) {
       return WsMessageClass.withCreateWsWorker(obj.CreateWsWorker)
     } else if (typeof obj === 'object' && obj !== null && obj.HeartBeat != null) {
-      return WsMessageClass.withCreateWsWorker(obj.HeartBeat)
+      return WsMessageClass.withHeartBeat(obj.HeartBeat)
     } else {
       throw new Error("Invalid object for WsMessageClass");
     }
@@ -582,7 +582,7 @@ function registerWsMain() {
             online_user: 0,
             online_client: 0,
             left_storage: 0,
-            use_max_storage: 0
+            user_max_storage: 0
           }
         }),
         WsDispatchType.Server
@@ -619,7 +619,7 @@ function registerWsMain() {
     }
     if (ws_message.msg.is(WsMessageClass.HeartBeat)) {
       let heartbeat = ws_message.msg.content;
-      data.dashboard = heartbeat.dashboard; 
+      data.dashboard.info = heartbeat.dashboard; 
     }
   }
 

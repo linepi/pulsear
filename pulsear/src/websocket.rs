@@ -87,7 +87,7 @@ pub struct DashBoardInfo {
   pub online_user: u64,
   pub online_client: u64,
   pub left_storage: u64,
-  pub use_max_storage: u64,
+  pub user_max_storage: u64,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -287,7 +287,7 @@ impl Handler<WsMessageInner> for WsSession {
             online_user: server_info.online_user,
             online_client: server_info.online_client,
             left_storage: user_max_storage - user_used_storage,
-            use_max_storage: user_max_storage
+            user_max_storage
           }
         };
 

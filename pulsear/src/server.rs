@@ -15,7 +15,7 @@ pub struct ServerConfig {
   pub sql_url: String
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ServerInfoInner {
   online_user: AtomicU64,
   online_client: AtomicU64,

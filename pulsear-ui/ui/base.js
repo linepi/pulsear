@@ -17,6 +17,20 @@ function defaultLocalConfig() {
   }
 }
 
+function bytesToHumanReadbleString(bytes) {
+  if (bytes < 1024) {
+    return `${bytes}b`;
+  } else if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}Kb`;
+  } else if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(2)}Mb`;
+  } else if (bytes < 1024 * 1024 * 1024 * 1024) {
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(3)}Gb`;
+  } else {
+    return `${(bytes / 1024 / 1024 / 1024 / 1024).toFixed(4)}Tb`;
+  }
+}
+
 // -------------- init -----------------
 let root = document;
 let prefix_ = window.location.origin + '/';
@@ -59,7 +73,28 @@ let rawData = {
     downloadText: "download",
   },
   uploader: null,
-  dashboard: null
+  dashboard: {
+    info: {
+      online_user: 0,
+      online_client: 0,
+      left_storage: 0,
+      user_max_storage: 0,
+    },
+    cards: [
+      {
+        header: "Storage",
+      },
+      {
+        header: "Users",
+      },
+      {
+        header: "Clients",
+      },
+      {
+        header: "Other",
+      }
+    ]
+  }
 }
 
 for (let i = 0; i < rawData.localConfig.userconfig.web_worker_num; i++) {
@@ -72,6 +107,24 @@ for (let i = 0; i < rawData.localConfig.userconfig.web_worker_num; i++) {
 let directives = {
   'v-text': (el, expr) => {
     el.innerText = eval(expr);
+  },
+  'v-var': (el, expr) => {
+    let raw;
+    if (!el.hasAttribute('raw-text')) {
+      el.setAttribute('raw-text', el.innerText);
+      raw = el.innerText;
+    } else {
+      raw = el.getAttribute('raw-text') 
+    }
+    let matchs = raw.match(/{{(.*?)}}/g);
+    if (matchs) {
+      matchs.forEach(match => {
+        let varName = match.slice(2, -2).trim();  
+        let val = eval(varName);
+        raw = raw.replace(match, val);
+      });
+    }
+    el.innerText = raw;
   },
   'v-show': (el, expr) => {
     el.style.display = eval(expr) ? 'block' : 'none';

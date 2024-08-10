@@ -198,18 +198,6 @@ class Uploader {
     return pseudoSha256(combinedStr);
   }
 
-  bytesToHumanReadbleString(bytes) {
-    if (bytes < 1024) {
-      return `${bytes}b`;
-    } else if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024.0).toFixed(1)}Kb`;
-    } else if (bytes < 1024 * 1024 * 1024) {
-      return `${(bytes / 1024.0 / 1024.0).toFixed(3)}Mb`;
-    } else {
-      return `${(bytes / 1024.0 / 1024.0 / 1024.0).toFixed(5)}Gb`;
-    }
-  }
-
   upload(file) {
     console.log('upload ', file);
     let hashval = this.hash(file);
