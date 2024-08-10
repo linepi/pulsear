@@ -581,7 +581,7 @@ function registerWsMain() {
           dashboard: {
             online_user: 0,
             online_client: 0,
-            left_storage: 0,
+            user_used_storage: 0,
             user_max_storage: 0
           }
         }),

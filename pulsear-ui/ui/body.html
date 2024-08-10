@@ -58,7 +58,7 @@
       <div class="card" v-show="data.dashboard.cards[0] != null">
         <h3 v-text="data.dashboard.cards[0].header"></h3>
         <p v-var>
-          {{bytesToHumanReadbleString(data.dashboard.info.user_max_storage - data.dashboard.info.left_storage)}} used of 
+          {{bytesToHumanReadbleString(data.dashboard.info.user_used_storage)}} used of 
           {{bytesToHumanReadbleString(data.dashboard.info.user_max_storage)}}
         </p>
       </div>

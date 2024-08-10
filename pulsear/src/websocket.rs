@@ -86,7 +86,7 @@ pub struct WsSession {
 pub struct DashBoardInfo {
   pub online_user: u64,
   pub online_client: u64,
-  pub left_storage: u64,
+  pub user_used_storage: u64,
   pub user_max_storage: u64,
 }
 
@@ -268,17 +268,15 @@ impl Handler<WsMessageInner> for WsSession {
       WsMessageClass::HeartBeat(hb) => {
         let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
         sqlhandler.update_user_config_by_name(&self.user_ctx.username, &hb.config).unwrap();
-
         let server_info = self.server.r_server_info();
-        let user_used_storage = 
-            self.server.file_handler.get_user_used_storage(&self.user_ctx.username).unwrap();
-
         let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
         let usertype = sqlhandler
           .get_user_by_name(&self.user_ctx.username)
           .expect("should has user")
           .expect("should has user")
           .usertype;
+        let user_used_storage = 
+            self.server.file_handler.get_user_used_storage(&self.user_ctx.username).unwrap();
         let user_max_storage = UserRight::from(usertype).max_storage;
 
         let send_hb = HeartBeat {
@@ -286,7 +284,7 @@ impl Handler<WsMessageInner> for WsSession {
           dashboard: DashBoardInfo {
             online_user: server_info.online_user,
             online_client: server_info.online_client,
-            left_storage: user_max_storage - user_used_storage,
+            user_used_storage,
             user_max_storage
           }
         };
@@ -390,7 +388,18 @@ impl Handler<WsMessageInner> for WsSession {
         ));
       }
       WsMessageClass::FileRequest(pkg) => {
-        let can = self.server.file_handler.add(pkg.clone(), self.user_ctx.clone());
+        let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
+        let usertype = sqlhandler
+          .get_user_by_name(&self.user_ctx.username)
+          .expect("should has user")
+          .expect("should has user")
+          .usertype;
+        let user_used_storage = 
+            self.server.file_handler.get_user_used_storage(&self.user_ctx.username).unwrap();
+        let user_max_storage = UserRight::from(usertype).max_storage;
+
+        let can = pkg.size + user_used_storage <= user_max_storage && 
+            self.server.file_handler.add(pkg.clone(), self.user_ctx.clone());
         let mut file_sendable_resp = FileSendableResponse {
           file_elem: None,
           hashval: pkg.file_hash.clone(),

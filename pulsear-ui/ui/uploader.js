@@ -66,7 +66,7 @@ class Uploader {
       } else {
         file.isUploader = false;
       }
-      if (typeof file_sendable_resp.file_elem === 'object') {
+      if (file_sendable_resp.file_elem != null) {
         let file_elem = file_sendable_resp.file_elem;
         let req = file_sendable_resp.req;
 
@@ -115,7 +115,7 @@ class Uploader {
         this.notifyWrapper(false, "sorry, you cannot send ", file.req.name,
           file.isUploader);
         if (file.isUploader) {
-          delete (this.#files[resp.hashval]);
+          delete (this.#files[file_sendable_resp.hashval]);
         }
       }
     }
