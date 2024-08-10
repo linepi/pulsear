@@ -112,8 +112,16 @@ impl Server {
       match target {
         Some(i) => {
           ctx_vec.remove(i);
-          self.info.online_user.fetch_sub((ctx_vec.len() == 0) as u64, std::sync::atomic::Ordering::Relaxed);
-          self.info.online_client.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+          if self.r_server_info().online_client == 0 {
+            log::error!("client is 0, but still leave"); 
+          } else {
+            self.info.online_client.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+          }
+          if self.r_server_info().online_user == 0 {
+            log::error!("user is 0, but still leave"); 
+          } else {
+            self.info.online_user.fetch_sub((ctx_vec.len() == 0) as u64, std::sync::atomic::Ordering::Relaxed);
+          }
           true
         }
         None => false,
