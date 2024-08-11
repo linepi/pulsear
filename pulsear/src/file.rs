@@ -168,17 +168,16 @@ impl FileWorker {
     self.jobs.write().unwrap().insert(file_hash, job);
   }
 
-  fn work(&self, file_hash: String, index: u64, bytes: bytes::Bytes) {
+  fn work(&self, file_hash: String, index: u64, data: bytes::Bytes) {
     use std::os::unix::prelude::FileExt;
     let jobs = self.jobs.read().unwrap();
     let job = jobs.get(&file_hash).unwrap();
-    let slice = bytes.slice(36..);
-    match job.file.write_at(&slice, job.request.slice_size*index) {
+    match job.file.write_at(&data, job.request.slice_size*index) {
       Ok(sz) => {
-        if sz == slice.len() {
+        if sz == data.len() {
           job.on_slice_send(index);
         } else {
-          log::info!("slice sended byte: {}, but need {}", sz, slice.len());
+          log::info!("slice sended byte: {}, but need {}", sz, data.len());
           job.on_slice_not_send(index);
         }
       }

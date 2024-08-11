@@ -16,8 +16,7 @@ main:
 
 bug:
 1. safari first file list item will be highlight
-2. safari iphone can not download
-3. dashboard active user not true
+2. dashboard active user not true
 
 robost:
 1. resend from last failure point

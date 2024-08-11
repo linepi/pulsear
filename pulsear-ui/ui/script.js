@@ -254,8 +254,16 @@ function uploadFile(evt) {
   });
 }
 
-// filename: String
 function downloadFile(filename) {
+  // Pre-open a blank window
+  const newWindow = window.open('', '_blank');
+  if (newWindow) {
+    newWindow.document.title = "Pulsear"; 
+  } else {
+    console.error("Popup blocked. Please allow popups for this site.");
+    return; 
+  }
+
   fetch(data.api.getdownloadurl, {
     method: 'POST',
     headers: {
@@ -268,14 +276,15 @@ function downloadFile(filename) {
     })
   }).then(response => {
     if (!response.ok) {
-      console.error("get file bad response:", response);
-      throw new Error(response);
+      console.error("Failed to get file: bad response:", response);
+      throw new Error("Server responded with status: " + response.status);
     }
-    response.text().then(text => {
-      window.open(data.api.downloadbyurl + `/${data.userCtx.username}/${text}`, '_blank');
-    });
+    return response.text();
+  }).then(text => {
+    newWindow.location = data.api.downloadbyurl + `/${data.userCtx.username}/${text}`;
   }).catch(e => {
-    console.error(e);
+    console.error("Error downloading the file:", e);
+    newWindow.close(); 
   })
 }
 
