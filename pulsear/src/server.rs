@@ -228,6 +228,7 @@ pub async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Res
         .service(download_raw)
         .service(get_download_url)
         .service(download_by_url)
+        .service(delete_file)
     })
     .bind_openssl(server_config.inner_addr, builder)?
     .workers(server_config.worker_num as usize)
@@ -249,6 +250,7 @@ pub async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Res
         .service(download_raw)
         .service(get_download_url)
         .service(download_by_url)
+        .service(delete_file)
     })
     .bind(server_config.inner_addr)?
     .workers(server_config.worker_num as usize)

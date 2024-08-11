@@ -63,16 +63,30 @@ function createFileRowElem(fileElem) {
     td.setAttribute('data-key', columnName);
     tr.appendChild(td);
   });
-
   let td = document.createElement('td');
+
   let actions = document.createElement('div');
-  actions.className = "gg-software-download";
-  actions.addEventListener('click', function (evt) {
+  actions.className = "file-action";
+
+  let download = document.createElement('div');
+  download.className = "gg-software-download";
+  download.addEventListener('click', function (evt) {
     downloadFile(fileElem.name);
   });
+  download.title = 'download';
+  let del = document.createElement('div');
+  del.className = "gg-remove";
+  del.addEventListener('click', function (evt) {
+    deleteFile(fileElem.name, () => {
+      tr.innerHTML = '';
+    });
+  });
+  del.title = 'delete';
+
+  actions.appendChild(del);
+  actions.appendChild(download);
   td.appendChild(actions);
   tr.appendChild(td);
-
   return tr;
 }
 
@@ -286,6 +300,29 @@ function downloadFile(filename) {
     console.error("Error downloading the file:", e);
     newWindow.close(); 
   })
+}
+
+function deleteFile(filename, ondelete) {
+  fetch(data.api.deletefile, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8'
+    },
+    body: JSON.stringify({
+      name: filename,
+      username: data.userCtx.username,
+      token: data.userCtx.token
+    })
+  }).then(response => {
+    if (!response.ok) {
+      throw new Error("Server responded with status: " + response.status);
+    }
+    ondelete();
+  }).catch(e => {
+    notify(false, `delete ${filename} error`)
+    console.error("Error downloading the file:", e);
+  })
+
 }
 
 function onDragOver(evt) {

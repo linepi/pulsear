@@ -153,6 +153,13 @@ pub struct DownloadRequest {
   pub token: String
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DeleteFileRequest {
+  pub name: String,
+  pub username: String,
+  pub token: String
+}
+
 struct FileWorker {
   jobs: RwLock<HashMap<String, FileJob>>,
 }
@@ -321,6 +328,10 @@ impl FileHandler {
     log::warn!("SEND {} {}", hashstr, index);
     let worker = &self.workers[*self.worker_dispatch.read().unwrap().get(&hashstr).unwrap()];
     worker.work(hashstr, index, bytes.slice(36..));
+  }
+
+  pub fn delete_file(&self, req: DeleteFileRequest) -> Result<(), Err> {
+    Ok(std::fs::remove_file(format!("inner/storage/{}/{}", req.username, req.name))?)
   }
 
   pub fn gen_download_code(&self, req: DownloadRequest) -> String {

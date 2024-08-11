@@ -87,7 +87,23 @@ pub async fn download_by_url(p: web::Path<(String, String)>, data: web::Data<Arc
   Ok(NamedFile::open(userfile_path)?)
 }
 
-
+#[post("/delete_file")]
+pub async fn delete_file(param: web::Json<DeleteFileRequest>, data: web::Data<Arc<Server>>) 
+  -> Result<HttpResponse, Err> {
+  log::info!("user try delete file: {}", serde_json::to_string(&param).unwrap());
+  let sqlhandler = SqlHandler::new(data.dbpool.clone());
+  match sqlhandler.get_user_by_name(&param.username)? {
+    Some(u) => {
+      assert_eq!(&u.username, &param.username);
+      assert_eq!(&u.token, &param.token);
+    }
+    None => {
+      return Err(Box::from("user not exists"));
+    }
+  }
+  data.file_handler.delete_file(param.0)?;
+  Ok(HttpResponse::Ok().body(""))
+}
 
 
 #[post("/files")]

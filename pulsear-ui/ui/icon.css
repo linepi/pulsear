@@ -2,7 +2,7 @@
   box-sizing: border-box;
   position: relative;
   display: block;
-  transform: scale(var(--ggs,1));
+  transform: scale(var(--ggs,0.8));
   width: 16px;
   height: 6px;
   border: 2px solid;
@@ -148,4 +148,34 @@
   transform: rotate(-45deg);
   left: 4px;
   bottom: 2px;
+}
+
+.gg-remove {
+  box-sizing: border-box;
+  position: relative;
+  display: block;
+  transform: scale(var(--ggs, 0.7));
+  width: 22px;
+  height: 22px;
+  border: 2px solid;
+  border-radius: 22px;
+}
+.gg-remove::before {
+  content: "";
+  display: block;
+  box-sizing: border-box;
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 5px;
+  top: 8px;
+  left: 4px;
+}
+
+.gg-remove:hover {
+  color: var(--link-hover-color);
+}
+.gg-remove:hover::before {
+  background: var(--link-hover-color);
 }

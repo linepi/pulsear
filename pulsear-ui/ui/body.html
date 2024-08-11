@@ -81,7 +81,7 @@
     <p>Select a section from the navigation menu to get started.</p>
   </section>
   <section v-else-if="data.tab === 'files'" @dragover="onDragOver" @drop="onDrop">
-    <div class="gg-software-upload" style="margin-left:3vw" @click="document.getElementById('upload').click()"></div>
+    <div class="gg-software-upload" title="upload" style="margin-left:3vw" @click="document.getElementById('upload').click()"></div>
     <table class="file-list">
       <thead><tr></tr></thead>
       <tbody></tbody>

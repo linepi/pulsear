@@ -58,6 +58,7 @@ let rawData = {
     login: prefix_ + "login",
     logout: prefix_ + "logout",
     getfile: prefix_ + "files",
+    deletefile: prefix_ + "delete_file",
     getfileelem: prefix_ + "file",
     getdownloadurl: prefix_ + "get_download_url",
     downloadbyurl: prefix_ + "download",
