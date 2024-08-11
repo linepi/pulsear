@@ -193,7 +193,7 @@ impl FileWorker {
     let mut jobs = self.jobs.write().unwrap();
     let job = jobs.get(&file_hash).unwrap();
     job.timer.stop_timer();
-    assert!(jobs.remove(&file_hash).is_some());
+    jobs.remove(&file_hash);
   }
 }
 

@@ -544,8 +544,10 @@ function onWsNotify(ws_message) {
 }
 
 function giveWorkerMsg(i, msg) {
-  console.log(`give worker ${i} msg `, msg);
-  data.ws.workers[i].worker.postMessage(msg);
+  if (data.ws.workers[i].established) {
+    console.log(`give worker ${i} msg `, msg);
+    data.ws.workers[i].worker.postMessage(msg);
+  }
 }
 
 class HigherTimeout {

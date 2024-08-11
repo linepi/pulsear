@@ -89,7 +89,7 @@ class Uploader {
           nr_slice_ok: 0
         };
         if (file.isUploader) {
-          let wholeworker = 2;
+          let wholeworker = 1;
           let wholeslice = parseInt((file.req.size - 1) / file.req.slice_size + 1);
           let worker_slice_devide = parseInt((wholeslice - 1) / wholeworker + 1);
           let worker_slice_n = 0;
@@ -99,7 +99,7 @@ class Uploader {
           for (let i = 0; i < wholeworker && worker_slice_n < wholeslice; i++) {
             let slice_start = i * worker_slice_devide;
             let slice_send = Math.min(worker_slice_devide, wholeslice - worker_slice_n);
-            giveWorkerMsg(this.chooseWorker(), {
+            giveWorkerMsg(file.worker_id = this.chooseWorker(), {
               req: file.req,
               f: file.f,
               slice_idx: [slice_start, slice_start + slice_send],
@@ -148,7 +148,7 @@ class Uploader {
           }
         }
       } else if (resp.status === "Resend" && this.#files[resp.file_hash].isUploader) {
-        giveWorkerMsg(this.chooseWorker(), {
+        giveWorkerMsg(file.worker_id, {
           req: file.req,
           f: file.f,
           slice_idx: [resp.slice_idx[0], resp.slice_idx[1]]
@@ -178,7 +178,7 @@ class Uploader {
     let lastNotSendIdx = ones[0]; // [1,2,3,5,6,7,11,12]
     for (let i = 1; i < ones.length; i++) {
       if (ones[i] - ones[i - 1] > 1) {
-        giveWorkerMsg(this.chooseWorker(), {
+        giveWorkerMsg(file.worker_id, {
           req: file.req,
           f: file.f,
           slice_idx: [lastNotSendIdx, ones[i - 1] + 1]
@@ -186,7 +186,7 @@ class Uploader {
         lastNotSendIdx = ones[i];
       }
     }
-    giveWorkerMsg(this.chooseWorker(), {
+    giveWorkerMsg(file.worker_id, {
       req: file.req,
       f: file.f,
       slice_idx: [lastNotSendIdx, ones[ones.length - 1] + 1]
@@ -195,7 +195,7 @@ class Uploader {
 
   bsSendOne(file) {
     let leastNotSend = file.bs.lsb();
-    giveWorkerMsg(this.chooseWorker(), {
+    giveWorkerMsg(file.worker_id, {
       req: file.req,
       f: file.f,
       slice_idx: [leastNotSend, leastNotSend + 1]
@@ -283,10 +283,16 @@ class Uploader {
     // 1 stand for not send
     bs.setRange(0, slice_num - 1, 1);
     this.#files[hashval] = {
+      // uploader
       f: file,
       req: request,
+      worker_id: -1,
       bs: bs,
       bs_updated: false,
+      // uploader
+
+      upload: null,
+      isUploader: true,
       tr: null,
       name_td: null,
       name_overlay: null,
