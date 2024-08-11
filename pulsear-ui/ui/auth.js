@@ -132,7 +132,7 @@ function onLogin(response, isInit) {
         eval('registerWsMain');
         eval('registerWsWorker');
         eval('Uploader');
-        registerWsMain();
+        registerWsMain(false);
         registerWsWorker();
         data.uploader = new Uploader();
         break;

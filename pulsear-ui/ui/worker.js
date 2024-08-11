@@ -7,28 +7,23 @@ let data = {
   socket: null,
 };
 
-function start(id, wsUri, resources_prefix) {
+function start(id) {
   data.id = id;
-  data.wsUri = wsUri;
-  data.resources_prefix = resources_prefix;
 
-  importScripts(`${resources_prefix}ws.js`, `${resources_prefix}uploader.js`);
-
-  let socket = new WebSocket(wsUri);
+  let socket = new WebSocket(data.wsUri);
 
   socket.onopen = evt => {
-    console.log(`worker ${data.id} socket connected`);
     let msg = new WsMessage(
       WsSender.withUser("", ""),
       WsMessageClass.withCreateWsWorker(id),
       WsDispatchType.Server
     );
     socket.send(msg.toJson());
+    postMessage('SEND CREATEWSWORKER ' + msg.toJson());
   }
 
   socket.onmessage = evt => {
     let ws_message = WsMessage.fromJson(evt.data);
-    console.log(`worker ${data.id} socket receive ${evt.data}`);
     if (ws_message.msg.is(WsMessageClass.CreateWsWorker)) {
       let id_from_server = ws_message.msg.content;
       if (data.id != id_from_server) {
@@ -36,31 +31,46 @@ function start(id, wsUri, resources_prefix) {
       }
       data.builded = true;
       postMessage('builded');
+      postMessage('RECV CREATEWSWORKER ' + ws_message.toJson());
     }
   }
 
   socket.onclose = evt => {
-    console.log(`worker ${data.id} socket disconnected`);
+    socket.onclose = null;
     socket = null;
     data.builded = false;
     postMessage('disconnect');
+    postMessage('CLOSE');
   }
 
   socket.onerror = evt => {
-    console.log(`worker ${data.id} socket error: `, evt);
+    socket.onclose = null;
     socket = null;
     data.builded = false;
     postMessage('disconnect');
+    postMessage('ERROR');
   }
 
   data.socket = socket;
 }
 
+function load(wsUri, resources_prefix) {
+  data.wsUri = wsUri;
+  data.resources_prefix = resources_prefix;
+  importScripts(`${resources_prefix}ws.js`, `${resources_prefix}uploader.js`);
+}
+
 function handleCommand(cmd) {
   let args = cmd.split(' ');
   if (args[0] === 'start') {
-    start(parseInt(args[1]), args[2], args[3]);
+    start(parseInt(args[1]));
     return;
+  } else if (args[0] === 'reconnect') {
+    start(data.id);
+  } else if (args[0] === 'wbclose') {
+    data.socket.close();
+  } else if (args[0] === 'load') {
+    load(args[1], args[2]);
   }
 }
 
@@ -75,6 +85,9 @@ function handleCommand(cmd) {
 */
 
 function uploadSlice(file, hashval, slice_index, start, end) {
+  if (data.socket != null && data.socket.readyState != WebSocket.OPEN) { 
+    return;
+  }
   const hashvalBlob = new Uint8Array(hashval.match(/[\da-f]{2}/gi).map(byte => parseInt(byte, 16)));
   const view = new DataView(new ArrayBuffer(4));
   view.setUint32(0, slice_index, true); // true express little-endian
@@ -100,16 +113,16 @@ function uploadAll(file) {
   }
 }
 
-function str(obj) {
-  return JSON.stringify(obj, null, "  ");
-}
-
 self.onmessage = function(workerMessageIn) {
   let msg = workerMessageIn.data;
   if (typeof msg === 'string') {
     handleCommand(msg);
     return;
   } 
+
+  if (data.socket != null && data.socket.readyState != WebSocket.OPEN) { 
+    return;
+  }
 
   let file = {
     f: msg.f,

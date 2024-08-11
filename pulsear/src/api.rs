@@ -92,7 +92,7 @@ pub async fn download_by_url(p: web::Path<(String, String)>, data: web::Data<Arc
 
 #[post("/files")]
 pub async fn get_file_list(param: web::Json<FileListRequest>, data: web::Data<Arc<Server>>) -> HttpResponse {
-  log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
+  log::info!("user try get file list: {}", serde_json::to_string(&param).unwrap());
   let resp: HttpResponse;
   match do_get_file_list(param, data) {
     Ok(response) => resp = response,
@@ -107,7 +107,7 @@ pub async fn get_file_list(param: web::Json<FileListRequest>, data: web::Data<Ar
 #[post("/file")]
 pub async fn get_file_elem(param: web::Json<FileElemRequest>, data: web::Data<Arc<Server>>) 
   -> Result<HttpResponse, Err> {
-  log::info!("user try get file: {}", serde_json::to_string(&param).unwrap());
+  log::info!("user try get file elem: {}", serde_json::to_string(&param).unwrap());
   let sqlhandler = SqlHandler::new(data.dbpool.clone());
   let user = match sqlhandler.get_user_by_name(&param.username)? {
     Some(u) => {

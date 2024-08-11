@@ -170,7 +170,7 @@ class WsDispatchType {
         throw new Error("should be client");
       }
     });
-    return new WsDispatchType(3, clients);
+    return new WsDispatchType(2, clients);
   }
   #value
   #wsClients
@@ -267,6 +267,7 @@ class WsDispatchType {
 
 class WsMessageClass {
   static Establish = new WsMessageClass(0, null);
+  static Reconnect = new WsMessageClass(10, null);
   static Leave = new WsMessageClass(7, null);
   static FileSendable = new WsMessageClass(1, null);
   static withFileSendable = e => {
@@ -300,6 +301,10 @@ class WsMessageClass {
   static withHeartBeat = id => {
     return new WsMessageClass(9, id);
   };
+  static PleaseSend = new WsMessageClass(11, null);
+  static withPleaseSend = file_hash => {
+    return new WsMessageClass(11, file_hash);
+  };
   #value
   #content
 
@@ -321,6 +326,9 @@ class WsMessageClass {
     switch (this.#value) {
       case 0:
         out_obj = "Establish";
+        break;
+      case 10:
+        out_obj = "Reconnect";
         break;
       case 1:
         out_obj = { FileSendable: this.#content };
@@ -349,6 +357,9 @@ class WsMessageClass {
       case 9:
         out_obj = { HeartBeat: this.#content };
         break;
+      case 11:
+        out_obj = { PleaseSend: this.#content };
+        break;
     }
     return out_obj;
   }
@@ -363,6 +374,8 @@ class WsMessageClass {
       return WsMessageClass.Establish;
     } else if (obj === "Leave") {
       return WsMessageClass.Leave;
+    } else if (obj === "Reconnect") {
+      return WsMessageClass.Reconnect;
     } else if (typeof obj === 'object' && obj !== null && obj.FileRequest) {
       return WsMessageClass.withFileRequest(obj.FileRequest);
     } else if (typeof obj === 'object' && obj !== null && obj.FileResponse) {
@@ -379,6 +392,8 @@ class WsMessageClass {
       return WsMessageClass.withCreateWsWorker(obj.CreateWsWorker)
     } else if (typeof obj === 'object' && obj !== null && obj.HeartBeat != null) {
       return WsMessageClass.withHeartBeat(obj.HeartBeat)
+    } else if (typeof obj === 'object' && obj !== null && obj.PleaseSend != null) {
+      return WsMessageClass.withPleaseSend(obj.PleaseSend)
     } else {
       throw new Error("Invalid object for WsMessageClass");
     }
@@ -490,7 +505,9 @@ class WsMessage {
 
 function wssend(msg) {
   // console.log("ws send: ", msg);
-  data.ws.socket.send(msg);
+  if (data.ws.socket != null && data.ws.socket.readyState == WebSocket.OPEN) {
+    data.ws.socket.send(msg);
+  }
 }
 
 function notify(important, str) {
@@ -531,6 +548,48 @@ function giveWorkerMsg(i, msg) {
   data.ws.workers[i].worker.postMessage(msg);
 }
 
+class HigherTimeout {
+  constructor(func, baseTime, maxTime = 600000) {
+    this.time = baseTime;
+    this.baseTime = baseTime;
+    this.maxTime = maxTime; 
+    this.func = func;
+  }
+
+  trigger() {
+    setTimeout(this.func, this.time);
+    this.time = Math.min(this.time * 2, this.maxTime);  
+  }
+
+  reset() {
+    this.time = this.baseTime;
+  }
+}
+
+function createWsWorker(i, wsUri) {
+  let worker = new Worker(`${data.resources_prefix}worker.js`);
+  // register handler for message from worker 
+  worker.onmessage = function (e) {
+    let tm = new HigherTimeout(() => {
+      console.warn('worker ', i, ' try reconnect');
+      worker.postMessage(`reconnect`);
+    }, 5000);
+
+    if (e.data === 'builded') {
+      tm.reset();
+      data.ws.workers[i].established = true;
+    } else if (e.data === 'disconnect') {
+      data.ws.workers[i].established = false;
+      tm.trigger(); 
+    } else {
+      console.log(`worker ${i}: `, e.data);
+    }
+  };
+  worker.postMessage(`load ${wsUri} ${data.resources_prefix}`);
+  worker.postMessage(`start ${i}`);
+  return worker;
+}
+
 function registerWsWorker() {
   const { location } = window;
 
@@ -539,41 +598,37 @@ function registerWsWorker() {
 
   for (let i = 0; i < data.localConfig.userconfig.web_worker_num; i++) {
     data.ws.workers[i] = {
-      worker: null,
+      worker: createWsWorker(i, wsUri),
       established: false
     };
-    data.ws.workers[i].worker = new Worker(`${data.resources_prefix}worker.js`);
-    // register handler for message from worker 
-    data.ws.workers[i].worker.onmessage = function (e) {
-      if (e.data === 'builded') {
-        data.ws.workers[i].established = true;
-      }
-      if (e.data === 'disconnect') {
-        data.ws.workers[i].established = false;
-      }
-    };
-    data.ws.workers[i].worker.postMessage(`start ${i} ${wsUri} ${data.resources_prefix}`);
   }
 }
 
-function registerWsMain() {
-  const { location } = window;
+let wsmain_tm = new HigherTimeout(() => {
+  console.warn('Reconnecting to WS main');
+  registerWsMain(true);
+}, 5000);
 
+function registerWsMain(reconnect) {
+  const { location } = window;
   const proto = location.protocol.startsWith('https') ? 'wss' : 'ws';
   const wsUri = `${proto}://${location.host}/ws`;
+  let hb_interval = null;
 
   data.ws.socket = new WebSocket(wsUri);
 
   data.ws.socket.onopen = evt => {
-    console.log('Ws connected');
+    wsmain_tm.reset();
     let msg = new WsMessage(
       WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
-      WsMessageClass.Establish,
+      reconnect ? WsMessageClass.Reconnect : WsMessageClass.Establish,
       WsDispatchType.Server
     );
+    console.log(reconnect ? 'Trying to reconnect' : 'Trying to connect', msg.asObj());
     wssend(msg.toJson());
-    // send heartbeat in 2s
-    setInterval(() => {
+
+    // Send heartbeat every 2 seconds
+    hb_interval = setInterval(() => {
       let msg = new WsMessage(
         WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
         WsMessageClass.withHeartBeat({
@@ -591,47 +646,56 @@ function registerWsMain() {
     }, 2000);
   }
 
-  data.ws.socket.onmessage = evt => {
-    let ws_message = WsMessage.fromJson(evt.data);
-    if (ws_message.msg.is(WsMessageClass.Errjson)) {
-      console.log('json decode error from server!');
-    }
-    if (ws_message.msg.is(WsMessageClass.Notify)) {
-      onWsNotify(ws_message);
-    }
-    if (ws_message.msg.is(WsMessageClass.Establish)) {
-      data.userCtx.user_ctx_hash = ws_message.policy.wsClients[0].user_ctx_hash;
-      data.ws.established = true;
-    }
-    if (ws_message.msg.is(WsMessageClass.Leave)) {
-      data.ws.socket.close();
-      data.userCtx.login = false
-      data.userCtx.username = "";
-      data.userCtx.token = "";
-      data.localConfig.userToken = "";
-      data.localConfig.username = "";
-      // enter index when logout
-      window.location = data.prefix;
-    }
-    if (ws_message.msg.is(WsMessageClass.FileSendable) ||
-      ws_message.msg.is(WsMessageClass.FileResponse)) {
-      data.uploader.onWsMessage(ws_message);
-    }
-    if (ws_message.msg.is(WsMessageClass.HeartBeat)) {
-      let heartbeat = ws_message.msg.content;
-      data.dashboard.info = heartbeat.dashboard; 
-    }
-  }
+  data.ws.socket.onmessage = handleWsMessage;  // 分离处理消息的函数，提高代码的可读性
 
   data.ws.socket.onclose = evt => {
-    console.log('Ws disconnected');
+    console.log('WebSocket onclose: ', evt);
+    data.ws.socket.onclose = function() {};
     data.ws.socket = null;
     data.ws.established = false;
+    clearInterval(hb_interval);
+    wsmain_tm.trigger();
   }
 
   data.ws.socket.onerror = evt => {
-    console.log("Ws error: ", evt);
+    console.log("WebSocket error: ", evt);
+    data.ws.socket.onerror = function() {};
     data.ws.socket = null;
     data.ws.established = false;
+    clearInterval(hb_interval);
+    wsmain_tm.trigger();
+  }
+}
+
+function handleWsMessage(evt) {
+  let ws_message = WsMessage.fromJson(evt.data);
+  if (ws_message.msg.is(WsMessageClass.Errjson)) {
+    console.log('JSON decode error from server!');
+  }
+  if (ws_message.msg.is(WsMessageClass.Notify)) {
+    onWsNotify(ws_message);
+  }
+  if (ws_message.msg.is(WsMessageClass.Establish) || ws_message.msg.is(WsMessageClass.Reconnect)) {
+    console.log('Received', ws_message.msg.is(WsMessageClass.Establish) ? 'Establish' : 'Reconnect', evt.data);
+    data.userCtx.user_ctx_hash = ws_message.policy.wsClients[0].user_ctx_hash;
+    data.ws.established = true;
+  }
+  if (ws_message.msg.is(WsMessageClass.Leave)) {
+    data.ws.socket.close();
+    data.userCtx.login = false;
+    data.userCtx.username = "";
+    data.userCtx.token = "";
+    data.localConfig.userToken = "";
+    data.localConfig.username = "";
+    window.location = data.prefix;
+  }
+  if (ws_message.msg.is(WsMessageClass.FileSendable) ||
+    ws_message.msg.is(WsMessageClass.FileResponse) ||
+    ws_message.msg.is(WsMessageClass.PleaseSend)) {
+    data.uploader.onWsMessage(ws_message);
+  }
+  if (ws_message.msg.is(WsMessageClass.HeartBeat)) {
+    let heartbeat = ws_message.msg.content;
+    data.dashboard.info = heartbeat.dashboard;
   }
 }

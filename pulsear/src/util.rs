@@ -1,4 +1,7 @@
 use crate::*;
+use std::thread;
+use std::time::{Duration, Instant};
+use std::sync::mpsc::{self, Sender, Receiver};
 
 #[derive(Hash)]
 pub struct HashGenerator {
@@ -72,6 +75,70 @@ impl fmt::Display for Time {
   }
 }
 
+enum TimerCommand {
+  Reset,
+  Stop,
+}
+
+pub struct Timer {
+  duration: Duration,
+  command_sender: Sender<TimerCommand>,
+}
+
+impl Timer {
+  pub fn new<F>(duration: Duration, task: F) -> Self 
+  where 
+    F: Fn() + Send + 'static 
+  {
+    let (tx, rx) = mpsc::channel();
+    let timer = Timer {
+      duration,
+      command_sender: tx,
+    };
+    timer.start(rx, task);
+    timer
+  }
+
+  fn start<F>(&self, command_receiver: Receiver<TimerCommand>, task: F) 
+  where 
+    F: Fn() + Send + 'static 
+  {
+    let duration = self.duration;
+    thread::spawn(move || {
+      let mut next_instant = Instant::now() + duration;
+      loop {
+        let remaining = next_instant.saturating_duration_since(Instant::now());
+        if remaining > Duration::from_secs(0) {
+          if let Ok(command) = command_receiver.recv_timeout(remaining) {
+            match command {
+              TimerCommand::Reset => {
+                next_instant = Instant::now() + duration;
+              }
+              TimerCommand::Stop => {
+                break;
+              }
+            }
+          } else {
+            task();
+            next_instant = Instant::now() + duration;
+          }
+        } else {
+          task();
+          next_instant = Instant::now() + duration;
+        }
+      }
+    });
+  }
+
+  pub fn reset_timer(&self) {
+    self.command_sender.send(TimerCommand::Reset).unwrap();
+  }
+
+  pub fn stop_timer(&self) {
+    self.command_sender.send(TimerCommand::Stop).unwrap();
+  }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -91,8 +158,20 @@ mod tests {
     Ok(())
   }
 
+  #[test]
   fn unit() -> Result<(), Err> {
-    let _time = Time::now();
+    println!("{}", Time::now().as_fmt("%H:%M:%S%.6f"));
     Ok(())
+  }
+
+  #[test]
+  fn timer() {
+    let timer = Timer::new(Duration::from_secs(1), || {
+      println!("task execute... {}", Time::now());
+    });
+    thread::sleep(Duration::from_secs(3));
+    timer.reset_timer();
+    thread::sleep(Duration::from_secs(5));
+    timer.stop_timer();
   }
 }

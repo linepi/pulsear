@@ -1,5 +1,4 @@
 use crate::*;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 // all thing about a file and its transfer
 // binary package:
@@ -25,9 +24,9 @@ pub enum FileResponseStatus {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct FileResponse {
-  pub name: String,
+  pub name: String, // filename
   pub file_hash: String,
-  pub slice_idx: u64,
+  pub slice_idx: (u64, u64),
   pub status: FileResponseStatus,
 }
 
@@ -189,14 +188,20 @@ impl FileWorker {
       }
     }
   }
+
+  fn done(&self, file_hash: String) {
+    let mut jobs = self.jobs.write().unwrap();
+    let job = jobs.get(&file_hash).unwrap();
+    job.timer.stop_timer();
+    assert!(jobs.remove(&file_hash).is_some());
+  }
 }
 
 struct FileJob {
   request: FileRequest,
   user_ctx: UserCtx,
   file: std::fs::File,
-  sended_slice: AtomicU64,
-  done: AtomicBool
+  timer: Timer
 }
 
 impl FileJob {
@@ -212,16 +217,24 @@ impl FileJob {
         .write(true)
         .create(true)
         .open(filepath)?;
+    let uctx = user_ctx.clone();
+    let filehash = req.file_hash.clone();
     Ok(Self {
       request: req,
       file: f,
       user_ctx,
-      sended_slice: AtomicU64::new(0),
-      done: AtomicBool::new(false)
+      timer: Timer::new(Duration::from_secs(10), move || {
+        uctx.session.as_ref().unwrap().do_send(WsMessage {
+          sender: WsSender::Server,
+          msg: WsMessageClass::PleaseSend(filehash.clone()),
+          policy: WsDispatchType::Targets(vec![WsClient::new(&uctx)])
+        })
+      })
     })
   }
 
   fn on_slice_not_send(&self, index: u64) {
+    self.timer.reset_timer();
     let policy = WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]);
     // the last index
     let status = FileResponseStatus::Resend;
@@ -230,7 +243,7 @@ impl FileJob {
       msg: WsMessageClass::FileResponse(FileResponse {
         name: self.request.name.clone(),
         file_hash: self.request.file_hash.clone(),
-        slice_idx: index,
+        slice_idx: (index, index+1),
         status
       }),
       policy
@@ -238,27 +251,17 @@ impl FileJob {
   }
 
   fn on_slice_send(&self, index: u64) {
-    if self.done.load(Ordering::Relaxed) {
-      log::warn!("receive message when finished {}", serde_json::to_string(&self.request).unwrap());
-      return;
-    }
-    let sended = self.sended_slice.fetch_add(1, Ordering::Relaxed);
-    let whole = (self.request.size - 1) / self.request.slice_size + 1;
+    self.timer.reset_timer();
     let status: FileResponseStatus;
     let policy = WsDispatchType::BroadcastSameUser;
     // the last index
-    if sended + 1 == whole {
-      status = FileResponseStatus::Finish;
-      self.done.fetch_or(true, Ordering::Relaxed);
-    } else {
-      status = FileResponseStatus::Ok;
-    }
+    status = FileResponseStatus::Ok;
     self.user_ctx.session.as_ref().unwrap().do_send(WsMessage {
       sender: WsSender::Server,
       msg: WsMessageClass::FileResponse(FileResponse {
         name: self.request.name.clone(),
         file_hash: self.request.file_hash.clone(),
-        slice_idx: index,
+        slice_idx: (index, index+1),
         status
       }),
       policy
@@ -306,11 +309,17 @@ impl FileHandler {
     true
   }
 
+  pub fn done(&self, file_hash: String) {
+    let worker = &self.workers[*self.worker_dispatch.read().unwrap().get(&file_hash).unwrap()];
+    worker.done(file_hash);
+  }
+
   pub fn send(&self, bytes: bytes::Bytes) {
     let hashstr: String = bytes.slice(0..32).iter().map(|b| {
       format!("{:02x}", b).to_string()
     }).collect();
     let index: u64 = bytes.slice(32..36).get_u32_le() as u64;
+    log::warn!("SEND {} {}", hashstr, index);
     let worker = &self.workers[*self.worker_dispatch.read().unwrap().get(&hashstr).unwrap()];
     worker.work(hashstr, index, bytes.slice(36..));
   }

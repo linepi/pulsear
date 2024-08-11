@@ -134,9 +134,11 @@ let directives = {
   },
   'v-src': (el, expr) => {
     el.src = eval(expr);
+    el.removeAttribute('v-src');
   },
   'v-href': (el, expr) => {
     el.href = eval(expr);
+    el.removeAttribute('v-href');
   },
   'v-if': (el, value) => {
     let condition_dom_list = []

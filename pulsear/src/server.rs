@@ -1,7 +1,8 @@
 use std::sync::atomic::AtomicU64;
-
 use crate::*;
 use api::*;
+use colored::Colorize;
+use fmt::Debug;
 
 #[derive(serde::Deserialize, Clone)]
 pub struct ServerConfig {
@@ -65,21 +66,15 @@ impl Server {
     self.user_ctxs.read().unwrap().clone()
   }
 
-  pub fn r_user_ctxs_by_username(&self, username: &String) -> Vec<UserCtx> {
-    self
-      .user_ctxs
-      .read()
-      .unwrap()
-      .get(username)
-      .unwrap()
-      .clone()
+  pub fn r_user_ctxs_by_username(&self, username: &String) -> Option<Vec<UserCtx>> {
+    self.user_ctxs.read().unwrap().get(username).cloned()
   }
 
-  pub fn r_user_ctxs_exclude_self(&self, user_ctx: &UserCtx) -> Vec<UserCtx> {
-    let mut ctx_vec = self.r_user_ctxs_by_username(&user_ctx.username);
+  pub fn r_user_ctxs_exclude_self(&self, user_ctx: &UserCtx) -> Option<Vec<UserCtx>> {
+    let mut ctx_vec = self.r_user_ctxs_by_username(&user_ctx.username)?;
     let index = ctx_vec.iter().position(|x| *x == *user_ctx).unwrap();
     ctx_vec.remove(index);
-    ctx_vec
+    Some(ctx_vec)
   }
 
   // add a user_ctx to server state, must not exist because user_ctx depend on connected time
@@ -175,13 +170,21 @@ pub async fn start(server: Arc<Server>, use_config_thread: bool) -> std::io::Res
         }
         None => "".to_string(),
       };
+      let level = match record.level() {
+        log::Level::Debug => "Debug".white(),
+        log::Level::Info => "Info".blue(),
+        log::Level::Trace => "Debug".cyan(),
+        log::Level::Warn => "Warn".yellow(),
+        log::Level::Error => "Error".red(),
+      };
       writeln!(
         buf,
-        "[{} {} {}] {}",
-        record.level(),
+        "[{} {} {} {}] {}",
+        Time::now().as_fmt("%H:%M:%S%.6f"),
+        level,
         fileline,
         module,
-        record.args()
+        format!("{}", record.args()).green()
       )
     })
     .init();

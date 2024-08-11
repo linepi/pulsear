@@ -1,4 +1,5 @@
 use crate::*;
+use colored::Colorize;
 
 #[derive(Clone)]
 pub struct UserCtx {
@@ -106,16 +107,19 @@ pub struct FileSendableResponse {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum WsMessageClass {
-  HeartBeat(HeartBeat),
+  HeartBeat(HeartBeat),       // two direction
   Establish,                  // two direction
-  CreateWsWorker(u64),
+  Reconnect,                  // from client
+  CreateWsWorker(u64),        // two direction
   Leave,                      // on logout
   FileSendable(FileSendableResponse), // come out
-  FileResponse(FileResponse), // come out
+  FileResponse(FileResponse), // two direction
   FileRequest(FileRequest),   // come in
+  // filehash
+  PleaseSend(String),         // come out
   Text(String),               // two direction
   Notify(String),
-  Errjson(String), //
+  Errjson(String),            // come out
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -178,7 +182,6 @@ impl Handler<WsTextMessage> for WsSession {
 
   // dispatch message
   fn handle(&mut self, text: WsTextMessage, ctx: &mut Self::Context) {
-    log::info!("ws text send: {}", text.0);
     ctx.text(text.0);
   }
 }
@@ -298,7 +301,45 @@ impl Handler<WsMessageInner> for WsSession {
           .unwrap(),
         ));
       }
+      WsMessageClass::Reconnect => {
+        log::info!("<- RECONNECT {}", serde_json::to_string(&ws_message).unwrap());
+        match &ws_message.policy {
+          WsDispatchType::Server => (),
+          _ => {
+            panic!("unexpected");
+          }
+        }
+        let wsclient_before = match ws_message.sender {
+          WsSender::User(u) => u,
+          _ => {
+            log::error!("unexpected");
+            return;
+          }
+        };
+        let username = wsclient_before.username;
+
+        let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
+        let token = sqlhandler
+          .get_user_by_name(&username)
+          .expect("should has user")
+          .expect("should has user")
+          .token;
+        self.user_ctx.token = token.clone();
+        self.user_ctx.username = username.clone();
+        self.user_ctx.session = Some(ctx.address());
+        log::info!("reconnect add new user_ctx: {}", self.user_ctx);
+        self.server.w_add_user_ctx(self.user_ctx.clone());
+        ctx.address().do_send(WsTextMessage(
+          serde_json::to_string(&WsMessage {
+            sender: WsSender::Server,
+            msg: WsMessageClass::Reconnect,
+            policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
+          })
+          .unwrap(),
+        ));
+      }
       WsMessageClass::Establish => {
+        log::info!("<- ESTABLISH {}", serde_json::to_string(&ws_message).unwrap());
         match &ws_message.policy {
           WsDispatchType::Server => (),
           _ => {
@@ -343,17 +384,18 @@ impl Handler<WsMessageInner> for WsSession {
           });
         }
 
-        // response establish with user_ctx_hash
-        ctx.address().do_send(WsTextMessage(
+        let msg = 
           serde_json::to_string(&WsMessage {
             sender: WsSender::Server,
             msg: WsMessageClass::Establish,
             policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
           })
-          .unwrap(),
-        ));
+          .unwrap();
+        log::info!("-> ESTABLISH {}", msg);
+        ctx.text(msg);
       }
       WsMessageClass::Leave => {
+        log::info!("<- LEAVE {}", serde_json::to_string(&ws_message).unwrap());
         match &ws_message.policy {
           WsDispatchType::Server => (),
           _ => {
@@ -377,17 +419,18 @@ impl Handler<WsMessageInner> for WsSession {
           });
         }
 
-        // response establish with user_ctx_hash
-        ctx.address().do_send(WsTextMessage(
+        let msg =
           serde_json::to_string(&WsMessage {
             sender: WsSender::Server,
             msg: WsMessageClass::Leave,
             policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
           })
-          .unwrap(),
-        ));
+          .unwrap();
+        log::info!("-> LEAVE {}", msg);
+        ctx.text(msg);
       }
       WsMessageClass::FileRequest(pkg) => {
+        log::info!("<- FILE REQUEST {}", serde_json::to_string(&ws_message).unwrap());
         let sqlhandler = SqlHandler::new(self.server.dbpool.clone());
         let usertype = sqlhandler
           .get_user_by_name(&self.user_ctx.username)
@@ -416,51 +459,70 @@ impl Handler<WsMessageInner> for WsSession {
             }
           };
         }
-        ctx.address().do_send(WsMessage {
+        let msg = WsMessage {
           sender: WsSender::Server,
           msg: WsMessageClass::FileSendable(file_sendable_resp),
           policy: WsDispatchType::BroadcastSameUser,
-        });
+        };
+        log::info!("->* FILESENDABLE {}", serde_json::to_string(&msg).unwrap());
+        ctx.address().do_send(msg);
       }
       WsMessageClass::Text(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
       WsMessageClass::Errjson(e) => {
-        log::error!("err json: {e}");
+        log::error!("ERR JSON: {e}");
       }
       WsMessageClass::Notify(_) => {
         ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
       }
       WsMessageClass::FileResponse(resp) => {
-        match resp.status {
-          FileResponseStatus::Ok => {
+        match &ws_message.policy {
+          WsDispatchType::Targets(_) => {
+            ctx.text(serde_json::to_string(&ws_message).unwrap());
             log::info!(
-              "FILE RESPONSE Ok {}", 
-              serde_json::to_string(&ws_message).expect("ws message must be deserializable")
-            );
+              "-> FILE RESPONSE {} {} {:?}", resp.name.green(), resp.file_hash, resp.slice_idx);
           }
-          _ => {
+          WsDispatchType::Server => {
             log::info!(
-              "FILE RESPONSE Other {}", 
-              serde_json::to_string(&ws_message).expect("ws message must be deserializable")
-            );
+              "<- FILE FINISH {} {} {:?}", resp.name.green(), resp.file_hash, resp.slice_idx);
+            match &resp.status {
+              FileResponseStatus::Finish => (),
+              _ => assert!(false)
+            }
+            self.server.file_handler.done(resp.file_hash.clone());
+            log::info!(
+              "->* FILE FINISH {} {} {:?}", resp.name.green(), resp.file_hash, resp.slice_idx);
+            // tell every client send is finish
+            ctx.address().do_send(WsMessage {
+              sender: WsSender::Server,
+              msg: ws_message.msg,
+              policy: WsDispatchType::BroadcastSameUser
+            });
           }
+          _ => ()
         }
-
-        ctx.text(serde_json::to_string(&ws_message).unwrap());
       }
       WsMessageClass::FileSendable(_) => {
-        ctx.address().do_send(WsTextMessage(serde_json::to_string(&ws_message).unwrap()));
+        let msg = serde_json::to_string(&ws_message).unwrap();
+        log::info!("-> FILE SENDABLE {}", msg);
+        ctx.text(msg);
+      }
+      WsMessageClass::PleaseSend(_) => {
+        let msg = serde_json::to_string(&ws_message).unwrap();
+        log::warn!("-> PLEASE SEND {}", msg);
+        ctx.text(msg);
       }
       WsMessageClass::CreateWsWorker(id) => {
-        ctx.address().do_send(WsTextMessage(
+        let msg = 
           serde_json::to_string(&WsMessage {
             sender: WsSender::Server,
             msg: WsMessageClass::CreateWsWorker(*id),
             policy: WsDispatchType::Targets(vec![WsClient::new(&self.user_ctx)]),
           })
-          .unwrap(),
-        ));
+          .unwrap();
+        log::info!("-> CREATEWSWORKER {}", msg);
+        ctx.text(msg);
       }
     }
   }
@@ -493,7 +555,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
       }
       ws::Message::Text(text) => {
         // new client connected
-        log::info!("ws receive text from client: {}", text);
+        log::debug!("ws receive text from client: {}", text);
         let ws_message: WsMessage = match serde_json::from_str(&text) {
           Ok(m) => m,
           Err(e) => {
@@ -519,7 +581,31 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
         ctx.close(reason);
         ctx.stop();
       }
-      ws::Message::Continuation(_) => {
+      ws::Message::Continuation(item) => {
+        let bys: bytes::Bytes;
+        match item {
+          actix_http::ws::Item::Continue(bytes) => {
+            bys = bytes;
+            log::warn!("CONTINUATION CONTINUE");
+          }
+          actix_http::ws::Item::FirstText(bytes) => {
+            bys = bytes;
+            log::warn!("CONTINUATION FirstText");
+          }
+          actix_http::ws::Item::FirstBinary(bytes) => {
+            bys = bytes;
+            log::warn!("CONTINUATION FirstBinary");
+          }
+          actix_http::ws::Item::Last(bytes) => {
+            bys = bytes;
+            log::warn!("CONTINUATION Last");
+          }
+        }
+        let hashstr: String = bys.slice(0..32).iter().map(|b| {
+          format!("{:02x}", b).to_string()
+        }).collect();
+        let index: u64 = bys.slice(32..36).get_u32_le() as u64;
+        log::warn!("hash {}, index {}, len {}", hashstr, index, bys.len());
         ctx.stop();
       }
       ws::Message::Nop => {}

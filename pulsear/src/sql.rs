@@ -152,7 +152,7 @@ impl SqlHandler {
     config: &UserConfig,
   ) -> Result<(), Err> {
     match self.get_user_by_name(username)? {
-      Some(u) => log::info!("update user[{:?}]'s config as {:?}", u, config),
+      Some(u) => log::debug!("update user[{:?}]'s config as {:?}", u, config),
       None => return Err(Box::from(format!("user does not exist: {}", username))),
     }
     let mut dbconn = self.dbpool.get_conn()?;

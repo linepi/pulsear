@@ -16,8 +16,6 @@ function pseudoSha256(input) {
   return pseudoHash;
 }
 
-
-
 class Uploader {
   // #websocketNum
   // #workerNum
@@ -63,8 +61,10 @@ class Uploader {
       let file = this.#files[hashval];
       if (data.userCtx.user_ctx_hash === user_ctx_hash) {
         file.isUploader = true;
+        console.log("IM UPLOADER");
       } else {
         file.isUploader = false;
+        console.log("IM NOT UPLOADER");
       }
       if (file_sendable_resp.file_elem != null) {
         let file_elem = file_sendable_resp.file_elem;
@@ -109,7 +109,7 @@ class Uploader {
         }
 
         this.focusRow(file.tr);
-        this.updateUploadStatus(file.name_overlay, file.upload);
+        this.updateUploadStatus(file.name_overlay, file.upload, false);
         this.notifyWrapper(false, "upload file " + file_elem.name, file.isUploader);
       } else {
         this.notifyWrapper(false, "sorry, you cannot send ", file.req.name,
@@ -118,31 +118,88 @@ class Uploader {
           delete (this.#files[file_sendable_resp.hashval]);
         }
       }
-    }
-    if (ws_message.msg.is(WsMessageClass.FileResponse)) {
+    } else if (ws_message.msg.is(WsMessageClass.FileResponse)) {
       let resp = ws_message.msg.content;
       const file = this.#files[resp.file_hash];
       if (file == null || file.upload == null) {
         console.log('file has been deleted: ', file);
       }
-      if (resp.status === "Finish" || resp.status === "Ok") {
-        file.upload.nr_slice_ok++;
+      if (resp.status === "Ok") {
+        file.upload.nr_slice_ok += resp.slice_idx[1] - resp.slice_idx[0];
+        // NOTE: the bitset range is inclusive
         this.updateUploadStatus(file.name_overlay, file.upload);
-        if (resp.status === "Finish") {
-          this.onFileUploaded(file);
-          // delete (this.#files[resp.file_hash]);
+        // when all is zero, bs become empty
+        if (this.#files[resp.file_hash].isUploader) {
+          file.bs.setRange(resp.slice_idx[0], resp.slice_idx[1] - 1, 0);
+          file.bs_updated = true;
+          if (file.bs.isEmpty()) {
+            // tell server this is finished
+            let msg = new WsMessage(
+              WsSender.withUser(data.userCtx.username, data.userCtx.user_ctx_hash),
+              WsMessageClass.withFileResponse({
+                name: file.req.name,
+                file_hash: resp.file_hash,
+                slice_idx: [0, parseInt((file.req.size - 1) / this.#sliceSize)],
+                status: "Finish"
+              }),
+              WsDispatchType.Server
+            );
+            wssend(msg.toJson());
+          }
         }
       } else if (resp.status === "Resend" && this.#files[resp.file_hash].isUploader) {
         giveWorkerMsg(this.chooseWorker(), {
           req: file.req,
           f: file.f,
-          slice_idx: [resp.slice_idx, resp.slice_idx]
+          slice_idx: [resp.slice_idx[0], resp.slice_idx[1]]
         });
       } else if (resp.status === "Fatalerr") {
         this.notifyWrapper(true, `upload ${resp.name} error`, this.#files[resp.file_hash].isUploader);
         delete (this.#files[resp.file_hash]);
+      } else if (resp.status === "Finish") {
+        // server response finish after receive client's finish
+        this.updateUploadStatus(file.name_overlay, file.upload, true);
+        this.onFileUploaded(file);
+        delete (this.#files[resp.file_hash]);
+      }
+    } else if (ws_message.msg.is(WsMessageClass.PleaseSend)) {
+      let file_hash = ws_message.msg.content;
+      let file = this.#files[file_hash];
+      if (file.isUploader) {
+        if (file.bs_updated) this.bsSendAllLeft(file);
+        else this.bsSendOne(file);
+        file.bs_updated = false;
       }
     }
+  }
+
+  bsSendAllLeft(file) {
+    let ones = file.bs.toArray();
+    let lastNotSendIdx = ones[0]; // [1,2,3,5,6,7,11,12]
+    for (let i = 1; i < ones.length; i++) {
+      if (ones[i] - ones[i - 1] > 1) {
+        giveWorkerMsg(this.chooseWorker(), {
+          req: file.req,
+          f: file.f,
+          slice_idx: [lastNotSendIdx, ones[i - 1] + 1]
+        });
+        lastNotSendIdx = ones[i];
+      }
+    }
+    giveWorkerMsg(this.chooseWorker(), {
+      req: file.req,
+      f: file.f,
+      slice_idx: [lastNotSendIdx, ones[ones.length - 1] + 1]
+    });
+  }
+
+  bsSendOne(file) {
+    let leastNotSend = file.bs.lsb();
+    giveWorkerMsg(this.chooseWorker(), {
+      req: file.req,
+      f: file.f,
+      slice_idx: [leastNotSend, leastNotSend + 1]
+    });
   }
 
   focusRow(tr) {
@@ -159,13 +216,14 @@ class Uploader {
   //   nr_slice_all: , 
   //   nr_slice_ok: ,
   // }
-  updateUploadStatus(overlay, status) {
+  updateUploadStatus(overlay, status, ok) {
     let percent = status.nr_slice_ok / status.nr_slice_all; // 这是一个0到1之间的值
     let upload_percent = percent * 100;
-    if (percent != 1) {
-      overlay.style.opacity = (0.85 - 0.5 * percent).toFixed(2); // 从20%的透明度开始到100%的不透明
-    } else {
+    if (upload_percent > 100) upload_percent = 100;
+    if (ok) {
       overlay.style.opacity = 0;
+    } else if (percent != 1) {
+      overlay.style.opacity = (0.85 - 0.5 * percent).toFixed(2); // 从20%的透明度开始到100%的不透明
     }
     overlay.textContent = `${upload_percent.toFixed(2)}% uploaded`;
   }
@@ -215,12 +273,23 @@ class Uploader {
       WsDispatchType.Server
     );
     wssend(msg.toJson());
+
+    /**
+     * There, use bitset to have full file sending information, even in network instability situation.
+     * Only client has this information. So server do not know if the file has all beed sended.
+     */
+    let slice_num = parseInt((file.size - 1) / this.#sliceSize + 1);
+    let bs = new BitSet();
+    // 1 stand for not send
+    bs.setRange(0, slice_num - 1, 1);
     this.#files[hashval] = {
       f: file,
       req: request,
+      bs: bs,
+      bs_updated: false,
       tr: null,
       name_td: null,
-      name_overlay: null
+      name_overlay: null,
     };
   }
 }
